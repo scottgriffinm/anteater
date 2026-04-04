@@ -1,0 +1,15 @@
+{
+  "name": "setup-anteater",
+  "version": "0.1.0",
+  "description": "Interactive CLI to install and configure Anteater in your Next.js app",
+  "bin": {
+    "setup-anteater": "./bin/setup-anteater.mjs"
+  },
+  "type": "module",
+  "files": ["bin/", "lib/"],
+  "keywords": ["anteater", "ai", "nextjs", "github-actions", "vercel"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
