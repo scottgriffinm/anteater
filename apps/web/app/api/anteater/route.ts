@@ -17,20 +17,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Auth check
+    // Auth check — skip for same-origin requests (Referer matches app URL)
     const secret = process.env.ANTEATER_SECRET;
     if (secret) {
-      const authHeader = request.headers.get("x-anteater-secret");
-      if (authHeader !== secret) {
-        return NextResponse.json<AnteaterResponse>(
-          {
-            requestId: "",
-            branch: "",
-            status: "error",
-            error: "Unauthorized",
-          },
-          { status: 401 }
-        );
+      const referer = request.headers.get("referer") || "";
+      const origin = request.headers.get("origin") || "";
+      const appUrl = process.env.ANTEATER_APP_URL || "";
+      const isSameOrigin =
+        (appUrl && (referer.startsWith(appUrl) || origin.startsWith(appUrl))) ||
+        referer.includes(request.nextUrl.host) ||
+        origin.includes(request.nextUrl.host);
+
+      if (!isSameOrigin) {
+        const authHeader = request.headers.get("x-anteater-secret");
+        if (authHeader !== secret) {
+          return NextResponse.json<AnteaterResponse>(
+            {
+              requestId: "",
+              branch: "",
+              status: "error",
+              error: "Unauthorized",
+            },
+            { status: 401 }
+          );
+        }
       }
     }
 
