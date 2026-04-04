@@ -1,0 +1,101 @@
+name: Anteater Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      requestId:
+        description: "Unique request ID"
+        required: true
+      prompt:
+        description: "Natural language change request"
+        required: true
+      mode:
+        description: "prod or copy"
+        required: true
+        default: "prod"
+      branch:
+        description: "Branch to create and commit to"
+        required: true
+      baseBranch:
+        description: "Base branch to fork from"
+        required: true
+        default: "main"
+      autoMerge:
+        description: "Auto-merge the PR if true"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.baseBranch }}
+          fetch-depth: 0
+
+      - name: Create and switch to target branch
+        run: |
+          git checkout -b "${{ inputs.branch }}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run Anteater agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          node .github/scripts/apply-changes.mjs \
+            --prompt "${{ inputs.prompt }}" \
+            --allowed-paths "apps/web/app/**,apps/web/components/**" \
+            --blocked-paths "apps/web/app/api/**,.env*,.github/**"
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit changes
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "anteater[bot]"
+          git config user.email "anteater[bot]@users.noreply.github.com"
+          git commit -m "anteater: ${{ inputs.prompt }}"
+
+      - name: Push branch
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git push origin "${{ inputs.branch }}"
+
+      - name: Create pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base "${{ inputs.baseBranch }}" \
+            --head "${{ inputs.branch }}" \
+            --title "anteater: ${{ inputs.prompt }}" \
+            --body "Automated change by Anteater (request \`${{ inputs.requestId }}\`).
+
+          **Prompt:** ${{ inputs.prompt }}
+          **Mode:** ${{ inputs.mode }}"
+
+      - name: Auto-merge PR
+        if: steps.changes.outputs.has_changes == 'true' && inputs.autoMerge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ inputs.branch }}" --squash --auto
