@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";
 
+function log(level: "info" | "warn" | "error", message: string, data?: Record<string, unknown>) {
+  const entry = { timestamp: new Date().toISOString(), level, message, ...data };
+  if (level === "error") console.error(JSON.stringify(entry));
+  else if (level === "warn") console.warn(JSON.stringify(entry));
+  else console.log(JSON.stringify(entry));
+}
+
 /**
  * GET /api/anteater?branch=anteater/run-xxx
  *
@@ -15,6 +22,7 @@ import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "
 export async function GET(request: NextRequest) {
   const branch = request.nextUrl.searchParams.get("branch");
   if (!branch) {
+    log("warn", "GET /api/anteater — missing branch param");
     return NextResponse.json<AnteaterStatusResponse>(
       { step: "error", completed: true, error: "Missing branch param" },
       { status: 400 },
@@ -24,6 +32,7 @@ export async function GET(request: NextRequest) {
   const repo = process.env.ANTEATER_GITHUB_REPO;
   const token = process.env.GITHUB_TOKEN;
   if (!repo || !token) {
+    log("error", "GET /api/anteater — server misconfigured", { hasRepo: !!repo, hasToken: !!token });
     return NextResponse.json<AnteaterStatusResponse>(
       { step: "error", completed: true, error: "Server misconfigured" },
       { status: 500 },
@@ -54,13 +63,16 @@ export async function GET(request: NextRequest) {
         // PR merged → redeploying or done
         if (pr.merged_at) {
           const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
-          if (mergedAgo > 30_000) {
+          const step = mergedAgo > 150_000 ? "done" : "redeploying";
+          log("info", "GET /api/anteater — PR merged", { branch, prNumber: pr.number, mergedAgo, step });
+          if (step === "done") {
             return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
           }
           return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
         }
 
         if (pr.state === "closed") {
+          log("warn", "GET /api/anteater — PR closed without merge", { branch, prNumber: pr.number });
           return NextResponse.json<AnteaterStatusResponse>({
             step: "error",
             completed: true,
@@ -69,6 +81,7 @@ export async function GET(request: NextRequest) {
         }
 
         // PR open, not yet merged
+        log("info", "GET /api/anteater — PR open, waiting for merge", { branch, prNumber: pr.number });
         return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
       }
     }
@@ -80,6 +93,7 @@ export async function GET(request: NextRequest) {
 
     if (branchRes.ok) {
       // Branch pushed but no PR yet — PR is being created
+      log("info", "GET /api/anteater — branch exists, PR being created", { branch });
       return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
     }
 
@@ -96,6 +110,7 @@ export async function GET(request: NextRequest) {
           Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
       );
       if (recentFailed) {
+        log("error", "GET /api/anteater — workflow failed", { branch, runId: recentFailed.id });
         return NextResponse.json<AnteaterStatusResponse>({
           step: "error",
           completed: true,
@@ -105,8 +120,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Still running — agent working on changes
+    log("info", "GET /api/anteater — still working", { branch });
     return NextResponse.json<AnteaterStatusResponse>({ step: "working", completed: false });
-  } catch {
+  } catch (err) {
+    log("error", "GET /api/anteater — status check failed", { branch, error: String(err) });
     return NextResponse.json<AnteaterStatusResponse>(
       { step: "error", completed: true, error: "Status check failed" },
       { status: 500 },
@@ -119,6 +136,7 @@ export async function POST(request: NextRequest) {
     const body: AnteaterRequest = await request.json();
 
     if (!body.prompt?.trim()) {
+      log("warn", "POST /api/anteater — empty prompt");
       return NextResponse.json<AnteaterResponse>(
         {
           requestId: "",
@@ -130,6 +148,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    log("info", "POST /api/anteater — received request", { prompt: body.prompt, mode: body.mode });
+
     // Auth check — browsers set Sec-Fetch-Site automatically (can't be spoofed)
     // "same-origin" = request came from the same site (the AnteaterBar)
     const secret = process.env.ANTEATER_SECRET;
@@ -140,6 +160,7 @@ export async function POST(request: NextRequest) {
       if (!isSameOrigin) {
         const authHeader = request.headers.get("x-anteater-secret");
         if (authHeader !== secret) {
+          log("warn", "POST /api/anteater — unauthorized request", { fetchSite });
           return NextResponse.json<AnteaterResponse>(
             {
               requestId: "",
@@ -157,6 +178,7 @@ export async function POST(request: NextRequest) {
     const token = process.env.GITHUB_TOKEN;
 
     if (!repo || !token) {
+      log("error", "POST /api/anteater — server misconfigured", { hasRepo: !!repo, hasToken: !!token });
       return NextResponse.json<AnteaterResponse>(
         {
           requestId: "",
@@ -173,6 +195,8 @@ export async function POST(request: NextRequest) {
       body.mode === "copy"
         ? `anteater/friend-${requestId}`
         : `anteater/run-${requestId}`;
+
+    log("info", "POST /api/anteater — dispatching workflow", { requestId, branch, prompt: body.prompt });
 
     // Dispatch GitHub Actions workflow
     const dispatchRes = await fetch(
@@ -200,6 +224,7 @@ export async function POST(request: NextRequest) {
 
     if (!dispatchRes.ok) {
       const err = await dispatchRes.text();
+      log("error", "POST /api/anteater — GitHub dispatch failed", { requestId, status: dispatchRes.status, error: err });
       return NextResponse.json<AnteaterResponse>(
         {
           requestId,
@@ -211,12 +236,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    log("info", "POST /api/anteater — workflow dispatched successfully", { requestId, branch });
+
     return NextResponse.json<AnteaterResponse>({
       requestId,
       branch,
       status: "queued",
     });
-  } catch {
+  } catch (err) {
+    log("error", "POST /api/anteater — request failed", { error: String(err) });
     return NextResponse.json<AnteaterResponse>(
       {
         requestId: "",

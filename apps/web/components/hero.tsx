@@ -3,7 +3,7 @@ export function Hero() {
     <section className="flex flex-col items-center justify-center px-6 pt-32 pb-20 text-center">
       <h1 className="max-w-3xl text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.08]">
         Your app rewrites{" "}
-        <span className="text-red-500">itself.</span>
+        <span className="text-accent">itself.</span>
       </h1>
 
       <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
