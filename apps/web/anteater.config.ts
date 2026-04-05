@@ -1,8 +1,8 @@
 import type { AnteaterConfig } from "@anteater/next";
 
 const config: AnteaterConfig = {
-  repo: "sgriffin-magnoliacap/anteater",
-  productionBranch: "main",
+  repo: "scottgriffinm/anteater",
+  productionBranch: "master",
   modes: ["prod", "copy"],
   autoMerge: true,
 

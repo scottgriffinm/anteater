@@ -32,6 +32,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
@@ -51,9 +52,10 @@ jobs:
       - name: Run Anteater agent
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROMPT: ${{ inputs.prompt }}
         run: |
           node .github/scripts/apply-changes.mjs \
-            --prompt "${{ inputs.prompt }}" \
+            --prompt "${PROMPT}" \
             --allowed-paths "apps/web/app/**,apps/web/components/**" \
             --blocked-paths "apps/web/app/api/**,.env*,.github/**"
 
@@ -69,10 +71,12 @@ jobs:
 
       - name: Commit changes
         if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PROMPT: ${{ inputs.prompt }}
         run: |
           git config user.name "anteater[bot]"
           git config user.email "anteater[bot]@users.noreply.github.com"
-          git commit -m "anteater: ${{ inputs.prompt }}"
+          git commit -m "anteater: ${PROMPT}"
 
       - name: Push branch
         if: steps.changes.outputs.has_changes == 'true'
@@ -83,15 +87,18 @@ jobs:
         if: steps.changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROMPT: ${{ inputs.prompt }}
+          REQUEST_ID: ${{ inputs.requestId }}
+          MODE: ${{ inputs.mode }}
         run: |
           gh pr create \
             --base "${{ inputs.baseBranch }}" \
             --head "${{ inputs.branch }}" \
-            --title "anteater: ${{ inputs.prompt }}" \
-            --body "Automated change by Anteater (request \`${{ inputs.requestId }}\`).
+            --title "anteater: ${PROMPT}" \
+            --body "Automated change by Anteater (request \`${REQUEST_ID}\`).
 
-          **Prompt:** ${{ inputs.prompt }}
-          **Mode:** ${{ inputs.mode }}"
+          **Prompt:** ${PROMPT}
+          **Mode:** ${MODE}"
 
       - name: Auto-merge PR
         if: steps.changes.outputs.has_changes == 'true' && inputs.autoMerge == 'true'
