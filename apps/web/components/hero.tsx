@@ -40,7 +40,7 @@ export function Hero() {
         </div>
         <div className="p-6 font-mono text-sm leading-relaxed text-left">
           <div className="text-muted">
-            <span className="text-accent">{">"}}</span> Make the hero headline larger and add a gradient
+            <span className="text-accent">{">"}</span> Make the hero headline larger and add a gradient
           </div>
           <div className="mt-4 text-muted/60">
             <span className="text-yellow-500">anteater</span> Dispatching to GitHub Actions...
