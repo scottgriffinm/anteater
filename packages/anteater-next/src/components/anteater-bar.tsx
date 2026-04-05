@@ -213,6 +213,23 @@ export function AnteaterBar({
         <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
       )}
 
+      {/* Error message */}
+      {status === "error" && error && (
+        <div
+          style={{
+            background: "rgba(239, 68, 68, 0.1)",
+            border: "1px solid rgba(239, 68, 68, 0.3)",
+            borderRadius: "12px",
+            padding: "10px 16px",
+            marginBottom: "8px",
+            fontSize: "13px",
+            color: "#ef4444",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         style={{
