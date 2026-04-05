@@ -14,7 +14,7 @@
 
 body {
   background: var(--color-background);
-  color: var(--color-foreground);
+  color: #ef4444;
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
@@ -22,3 +22,4 @@ body {
   background: var(--color-accent);
   color: #000;
 }
+
