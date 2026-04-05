@@ -6,7 +6,7 @@ export function Hero() {
       <div className="mb-16 text-sm text-muted font-mono">anteater</div>
 
       <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-6">
-        Let your users design your app.
+        Let users design your app.
       </h1>
 
       <p className="text-lg text-muted mb-12">
