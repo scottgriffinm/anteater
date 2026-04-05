@@ -10,6 +10,7 @@ const STEP_LABELS: Record<PipelineStep, string> = {
   working: "Working on changes",
   merging: "Merging changes",
   redeploying: "Redeploying",
+  done: "Done!",
 };
 
 function PipelineProgress({

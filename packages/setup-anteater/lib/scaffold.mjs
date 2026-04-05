@@ -57,10 +57,11 @@ export default config;
 export function generateApiRoute({ isTypeScript, productionBranch }) {
   const ext = isTypeScript ? "ts" : "js";
   const typeImports = isTypeScript
-    ? `import type { AnteaterRequest, AnteaterResponse } from "@anteater/next";\n`
+    ? `import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";\n`
     : "";
   const reqType = isTypeScript ? ": AnteaterRequest" : "";
   const resGeneric = isTypeScript ? "<AnteaterResponse>" : "";
+  const statusGeneric = isTypeScript ? "<AnteaterStatusResponse>" : "";
 
   return {
     filename: `route.${ext}`,
@@ -141,6 +142,96 @@ export async function POST(request${isTypeScript ? ": NextRequest" : ""}) {
     return NextResponse.json${resGeneric}(
       { requestId: "", branch: "", status: "error", error: "Invalid request body" },
       { status: 400 }
+    );
+  }
+}
+
+/**
+ * GET /api/anteater?branch=anteater/run-xxx
+ * Polls real pipeline status by checking branch → PR → merge state on GitHub.
+ */
+export async function GET(request${isTypeScript ? ": NextRequest" : ""}) {
+  const branch = new URL(request.url).searchParams.get("branch");
+  if (!branch) {
+    return NextResponse.json${statusGeneric}(
+      { step: "error", completed: true, error: "Missing branch param" }, { status: 400 },
+    );
+  }
+
+  const repo = process.env.ANTEATER_GITHUB_REPO;
+  const token = process.env.GITHUB_TOKEN;
+  if (!repo || !token) {
+    return NextResponse.json${statusGeneric}(
+      { step: "error", completed: true, error: "Server misconfigured" }, { status: 500 },
+    );
+  }
+
+  const gh = (url) =>
+    fetch(url, {
+      headers: {
+        Authorization: \\\`Bearer \\\${token}\\\`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      cache: "no-store",
+    });
+
+  try {
+    // Check if branch exists (agent pushes it when done)
+    const branchRes = await gh(
+      \\\`https://api.github.com/repos/\\\${repo}/git/refs/heads/\\\${branch}\\\`,
+    );
+
+    if (!branchRes.ok) {
+      // Branch doesn't exist yet — check for workflow failure
+      const runsRes = await gh(
+        \\\`https://api.github.com/repos/\\\${repo}/actions/workflows/anteater.yml/runs?per_page=5\\\`,
+      );
+      if (runsRes.ok) {
+        const { workflow_runs: runs } = await runsRes.json();
+        const recentFailed = runs?.find(
+          (r) => r.status === "completed" && r.conclusion === "failure" &&
+            Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
+        );
+        if (recentFailed) {
+          return NextResponse.json${statusGeneric}({
+            step: "error", completed: true, error: "Workflow failed — check GitHub Actions",
+          });
+        }
+      }
+      return NextResponse.json${statusGeneric}({ step: "working", completed: false });
+    }
+
+    // Branch exists — check for PR
+    const prRes = await gh(
+      \\\`https://api.github.com/repos/\\\${repo}/pulls?head=\\\${repo.split("/")[0]}:\\\${branch}&state=all&per_page=1\\\`,
+    );
+    if (!prRes.ok || !(await prRes.json()).length) {
+      return NextResponse.json${statusGeneric}({ step: "merging", completed: false });
+    }
+
+    const pr = (await gh(
+      \\\`https://api.github.com/repos/\\\${repo}/pulls?head=\\\${repo.split("/")[0]}:\\\${branch}&state=all&per_page=1\\\`,
+    ).then((r) => r.json()))[0];
+
+    if (pr.merged_at) {
+      const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
+      if (mergedAgo > 30000) {
+        return NextResponse.json${statusGeneric}({ step: "done", completed: true });
+      }
+      return NextResponse.json${statusGeneric}({ step: "redeploying", completed: false });
+    }
+
+    if (pr.state === "closed") {
+      return NextResponse.json${statusGeneric}({
+        step: "error", completed: true, error: "PR was closed without merging",
+      });
+    }
+
+    return NextResponse.json${statusGeneric}({ step: "merging", completed: false });
+  } catch {
+    return NextResponse.json${statusGeneric}(
+      { step: "error", completed: true, error: "Status check failed" }, { status: 500 },
     );
   }
 }

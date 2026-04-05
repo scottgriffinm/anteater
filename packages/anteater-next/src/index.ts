@@ -4,5 +4,6 @@ export type {
   AnteaterConfig,
   AnteaterRequest,
   AnteaterResponse,
+  AnteaterStatusResponse,
   AnteaterBarProps,
 } from "./types";
