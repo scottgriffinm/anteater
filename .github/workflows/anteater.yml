@@ -19,7 +19,7 @@ on:
       baseBranch:
         description: "Base branch to fork from"
         required: true
-        default: "main"
+        default: "master"
       autoMerge:
         description: "Auto-merge the PR if true"
         required: false
