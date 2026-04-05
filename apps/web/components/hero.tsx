@@ -1,6 +1,12 @@
 export function Hero() {
   return (
     <section className="flex flex-col items-center justify-center px-6 pt-32 pb-20 text-center">
+      {/* Beta badge */}
+      <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-4 py-2 text-sm font-medium text-accent">
+        <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+        Now in public beta
+      </div>
+
       <h1 className="max-w-3xl text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.08]">
         Your app rewrites{" "}
         <span className="text-accent">itself.</span>
@@ -40,7 +46,7 @@ export function Hero() {
         </div>
         <div className="p-6 font-mono text-sm leading-relaxed text-left">
           <div className="text-muted">
-            <span className="text-accent">{">"}</span> Make the hero headline larger and add a gradient
+            <span className="text-accent">{">"};</span> Make the hero headline larger and add a gradient
           </div>
           <div className="mt-4 text-muted/60">
             <span className="text-yellow-500">anteater</span> Dispatching to GitHub Actions...
