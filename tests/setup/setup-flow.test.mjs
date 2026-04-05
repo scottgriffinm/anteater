@@ -6,13 +6,14 @@ const state = {
   hasVercel: true,
   isNextJs: true,
   anthropicKeyValid: true,
+  ghToken: "ghp_mock_token_12345", // default: durable classic PAT
 };
 
 // ─── Mock all dependencies (hoisted) ───────────────────────────
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn((cmd) => {
-    if (cmd.includes("gh auth token")) return "ghp_mock_token_12345";
+    if (cmd.includes("gh auth token")) return state.ghToken;
     return "";
   }),
 }));
@@ -23,7 +24,11 @@ vi.mock("../../packages/setup-anteater/lib/ui.mjs", () => {
     bold: (s) => s, dim: (s) => s, green: (s) => s, red: (s) => s,
     yellow: (s) => s, cyan: (s) => s,
     ok: noop, fail: noop, warn: noop, info: noop, heading: noop, blank: noop,
-    ask: vi.fn(async () => "sk-ant-test-key-123"),
+    ask: vi.fn(async (question) => {
+      if (question.includes("Anthropic")) return "sk-ant-test-key-123";
+      if (question.includes("PAT") || question.includes("ghp_")) return "ghp_durable_pat_token";
+      return "sk-ant-test-key-123";
+    }),
     confirm: vi.fn(async () => true),
     select: vi.fn(async (q, opts) => opts[0].value),
     spinner: vi.fn(async (msg, fn) => fn()),
@@ -70,6 +75,7 @@ beforeEach(() => {
   state.hasVercel = true;
   state.isNextJs = true;
   state.anthropicKeyValid = true;
+  state.ghToken = "ghp_mock_token_12345";
 
   originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -121,5 +127,11 @@ describe("setup flow", () => {
   it("exits for non-Next.js project", async () => {
     state.isNextJs = false;
     await expect(runSetup()).rejects.toThrow("process.exit(1)");
+  });
+
+  it("prompts for PAT when gh auth token returns OAuth token", async () => {
+    state.ghToken = "gho_short_lived_oauth_token";
+    // ask() mock returns "ghp_durable_pat_token" when prompted for PAT
+    await expect(runSetup()).resolves.toBeUndefined();
   });
 });

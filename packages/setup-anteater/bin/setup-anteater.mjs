@@ -82,10 +82,24 @@ async function main() {
   let githubToken;
   try {
     githubToken = execSync("gh auth token", { encoding: "utf-8" }).trim();
-    ok("Using token from GitHub CLI");
   } catch {
     fail("GitHub CLI not authenticated. Run: gh auth login");
     process.exit(1);
+  }
+
+  // OAuth tokens (gho_*) expire in ~8 hours — not suitable for Vercel env
+  if (githubToken.startsWith("gho_")) {
+    warn("Your GitHub CLI token is a short-lived OAuth token (expires in ~8 hours).");
+    info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
+    info(`Create one at ${cyan("https://github.com/settings/tokens")} with ${bold("repo")} + ${bold("workflow")} scopes.`);
+    blank();
+    githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
+    if (!githubToken) {
+      fail("A GitHub PAT is required.");
+      process.exit(1);
+    }
+  } else {
+    ok("Using token from GitHub CLI");
   }
 
   const check = await spinner("Checking permissions", () =>
@@ -93,6 +107,11 @@ async function main() {
   );
 
   if (!check.ok && check.missing.length > 0 && !check.missing.includes("unknown")) {
+    if (githubToken.startsWith("ghp_") || githubToken.startsWith("github_pat_")) {
+      fail("Token is missing required scopes: " + check.missing.join(", "));
+      info("Create a new PAT with repo + workflow scopes.");
+      process.exit(1);
+    }
     info("Upgrading token scopes...");
     try {
       execSync(`gh auth refresh --scopes ${check.missing.join(",")}`, { stdio: "inherit" });
