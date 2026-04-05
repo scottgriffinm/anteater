@@ -13,7 +13,7 @@ export function Hero() {
       </h1>
 
       <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
-        Type what you want. Ship in seconds.
+        Describe changes in plain English. Anteater handles the rest.
       </p>
 
       <div className="mt-10 flex flex-col sm:flex-row gap-4">
