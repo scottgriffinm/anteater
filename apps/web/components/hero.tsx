@@ -10,7 +10,7 @@ export function Hero() {
       </h1>
 
       <p className="text-lg text-muted mb-12">
-        One install. Then users can make changes to your app.
+        One install. Then your users can make the app of their dreams.
       </p>
 
       <div className="inline-flex items-center gap-3 rounded-lg border border-border bg-surface px-6 py-3 font-mono text-sm mb-8">
