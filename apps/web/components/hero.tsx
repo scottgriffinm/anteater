@@ -8,8 +8,8 @@ export function Hero() {
       </div>
 
       <h1 className="max-w-3xl text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.08]">
-        Your app rewrites{" "}
-        <span className="text-accent">itself.</span>
+        Ship changes in{" "}
+        <span className="text-accent">seconds.</span>
       </h1>
 
       <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
