@@ -86,6 +86,7 @@ async function callClaude(prompt, fileContents) {
     .map(([path, content]) => `--- ${path} ---\n${content}`)
     .join("\n\n");
 
+  const validPaths = Object.keys(fileContents);
   const systemPrompt = `You are Anteater, an AI coding agent. You modify web application source files based on user requests.
 
 RULES:
@@ -94,11 +95,12 @@ RULES:
 - Preserve existing code style and patterns
 - Never modify environment files, API routes, or configuration
 - Return ONLY the files you changed, in the exact format specified
+- CRITICAL: The "path" in each output object MUST exactly match one of the input file paths. Do NOT shorten, rename, or strip prefixes from paths.
 
 OUTPUT FORMAT:
 Return a JSON array of objects, each with "path" (string) and "content" (string).
 Return ONLY valid JSON, no markdown fences, no explanation.
-Example: [{"path": "components/hero.tsx", "content": "...full file content..."}]
+The "path" must be the EXACT path as shown in the input (e.g. "${validPaths[0] || "apps/web/components/hero.tsx"}").
 
 If no changes are needed, return an empty array: []`;
 
@@ -165,8 +167,31 @@ async function main() {
     process.exit(0);
   }
 
-  console.log(`Agent wants to modify ${changes.length} file(s):`);
-  await writeFiles(changes);
+  // Validate all returned paths match input files
+  const validPathSet = new Set(Object.keys(fileContents));
+  const validated = [];
+  for (const change of changes) {
+    if (validPathSet.has(change.path)) {
+      validated.push(change);
+    } else {
+      console.warn(`  Rejected: ${change.path} (not in allowed input files)`);
+      // Try to find the right path by matching the filename
+      const basename = change.path.split("/").pop();
+      const match = [...validPathSet].find((p) => p.endsWith("/" + basename));
+      if (match) {
+        console.log(`  Corrected: ${change.path} → ${match}`);
+        validated.push({ path: match, content: change.content });
+      }
+    }
+  }
+
+  if (validated.length === 0) {
+    console.log("No valid changes after path validation.");
+    process.exit(0);
+  }
+
+  console.log(`Agent wants to modify ${validated.length} file(s):`);
+  await writeFiles(validated);
   console.log("Done!");
 }
 

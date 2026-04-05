@@ -412,6 +412,7 @@ async function callClaude(prompt, fileContents) {
       system: \`You are Anteater, an AI coding agent. You modify web application source files based on user requests.
 RULES: Make minimal, focused changes. Only modify files that need to change. Preserve existing code style.
 Never modify environment files, API routes, or configuration.
+CRITICAL: The "path" in each output object MUST exactly match one of the input file paths. Do NOT shorten, rename, or strip prefixes from paths.
 OUTPUT FORMAT: Return a JSON array of objects with "path" and "content". Return ONLY valid JSON, no markdown fences.
 If no changes are needed, return an empty array: []\`,
       messages: [{ role: "user", content: \`Files:\\n\\n\${fileList}\\n\\nRequest: \${prompt}\` }],
@@ -434,8 +435,27 @@ async function main() {
   const changes = await callClaude(args.prompt, contents);
 
   if (!changes?.length) { console.log("No changes needed."); process.exit(0); }
-  console.log(\`Modifying \${changes.length} file(s)\`);
-  for (const { path, content } of changes) {
+
+  // Validate returned paths match input files
+  const validPathSet = new Set(Object.keys(contents));
+  const validated = [];
+  for (const change of changes) {
+    if (validPathSet.has(change.path)) {
+      validated.push(change);
+    } else {
+      console.warn(\`  Rejected: \${change.path} (not in allowed input files)\`);
+      const basename = change.path.split("/").pop();
+      const match = [...validPathSet].find((p) => p.endsWith("/" + basename));
+      if (match) {
+        console.log(\`  Corrected: \${change.path} → \${match}\`);
+        validated.push({ path: match, content: change.content });
+      }
+    }
+  }
+
+  if (!validated.length) { console.log("No valid changes after path validation."); process.exit(0); }
+  console.log(\`Modifying \${validated.length} file(s)\`);
+  for (const { path, content } of validated) {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, content, "utf-8");
     console.log(\`  Updated: \${path}\`);
