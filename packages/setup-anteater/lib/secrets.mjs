@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 /**
  * Check if a CLI tool is available.
  */
-function hasCommand(cmd) {
+export function hasCommand(cmd) {
   try {
     execSync(`${cmd} --version`, { stdio: "ignore" });
     return true;

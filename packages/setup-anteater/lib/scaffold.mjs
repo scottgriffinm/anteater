@@ -68,7 +68,16 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   if (TS) add('import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";');
   add("");
 
-  // --- Shared helper (used by both POST and GET) ---
+  // --- Helpers ---
+  add("/** Auto-detect repo from Vercel system env vars, fall back to ANTEATER_GITHUB_REPO */");
+  add("function getRepo()" + (TS ? ": string | undefined" : "") + " {");
+  add("  if (process.env.ANTEATER_GITHUB_REPO) return process.env.ANTEATER_GITHUB_REPO;");
+  add("  const owner = process.env.VERCEL_GIT_REPO_OWNER;");
+  add("  const slug = process.env.VERCEL_GIT_REPO_SLUG;");
+  add("  if (owner && slug) return `${owner}/${slug}`;");
+  add("  return undefined;");
+  add("}");
+  add("");
   add("function ghFetch(url" + (TS ? ": string" : "") + ") {");
   add("  const token = process.env.GITHUB_TOKEN;");
   add("  return fetch(url, {");
@@ -79,6 +88,12 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("    },");
   add('    cache: "no-store",');
   add("  });");
+  add("}");
+  add("");
+  add("/** Return status response with deployment ID for client-side deploy detection */");
+  add("function status(body" + (TS ? ": AnteaterStatusResponse" : "") + ", httpStatus" + (TS ? "?: number" : "") + ") {");
+  add("  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID;");
+  add("  return NextResponse.json({ ...body, deploymentId }, httpStatus ? { status: httpStatus } : undefined);");
   add("}");
   add("");
 
@@ -110,7 +125,7 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("      }");
   add("    }");
   add("");
-  add("    const repo = process.env.ANTEATER_GITHUB_REPO;");
+  add("    const repo = getRepo();");
   add("    const token = process.env.GITHUB_TOKEN;");
   add("    if (!repo || !token) {");
   add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
@@ -166,29 +181,23 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("");
 
   // --- GET handler (status polling) ---
-  const SG = TS ? "<AnteaterStatusResponse>" : "";
   add("/**");
   add(" * GET /api/anteater?branch=anteater/run-xxx");
-  add(" * Polls real pipeline status: PR first, then branch, then workflow failures.");
+  add(" * Polls pipeline status. Deploy detection handled client-side via deployment ID.");
   add(" */");
   add("export async function GET(request" + (TS ? ": NextRequest" : "") + ") {");
   add("  const branch = request.nextUrl.searchParams.get(\"branch\");");
   add("  if (!branch) {");
-  add("    return NextResponse.json" + SG + "(");
-  add('      { step: "error", completed: true, error: "Missing branch param" }, { status: 400 },');
-  add("    );");
+  add('    return status({ step: "error", completed: true, error: "Missing branch param" }, 400);');
   add("  }");
   add("");
-  add("  const repo = process.env.ANTEATER_GITHUB_REPO;");
+  add("  const repo = getRepo();");
   add("  const token = process.env.GITHUB_TOKEN;");
   add("  if (!repo || !token) {");
-  add("    return NextResponse.json" + SG + "(");
-  add('      { step: "error", completed: true, error: "Server misconfigured" }, { status: 500 },');
-  add("    );");
+  add('    return status({ step: "error", completed: true, error: "Server misconfigured" }, 500);');
   add("  }");
   add("");
   add("  try {");
-  add("    // Step 1: Check for PR first (survives branch deletion after merge)");
   add("    const prRes = await ghFetch(");
   add("      `https://api.github.com/repos/${repo}/pulls?head=${repo.split(\"/\")[0]}:${branch}&state=all&per_page=1`,");
   add("    );");
@@ -198,29 +207,23 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("        const pr = prs[0];");
   add("        if (pr.merged_at) {");
   add("          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
-  add("          if (mergedAgo > 30000) {");
-  add("            return NextResponse.json" + SG + "({ step: \"done\", completed: true });");
-  add("          }");
-  add("          return NextResponse.json" + SG + "({ step: \"redeploying\", completed: false });");
+  add("          const step = mergedAgo > 150000 ? \"done\" : \"redeploying\";");
+  add("          return status({ step, completed: step === \"done\" });");
   add("        }");
   add("        if (pr.state === \"closed\") {");
-  add("          return NextResponse.json" + SG + "({");
-  add('            step: "error", completed: true, error: "PR was closed without merging",');
-  add("          });");
+  add('          return status({ step: "error", completed: true, error: "PR was closed without merging" });');
   add("        }");
-  add("        return NextResponse.json" + SG + "({ step: \"merging\", completed: false });");
+  add("        return status({ step: \"merging\", completed: false });");
   add("      }");
   add("    }");
   add("");
-  add("    // Step 2: Check if branch exists");
   add("    const branchRes = await ghFetch(");
   add("      `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,");
   add("    );");
   add("    if (branchRes.ok) {");
-  add("      return NextResponse.json" + SG + "({ step: \"merging\", completed: false });");
+  add("      return status({ step: \"merging\", completed: false });");
   add("    }");
   add("");
-  add("    // Step 3: No branch, no PR — check for workflow failure");
   add("    const runsRes = await ghFetch(");
   add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,");
   add("    );");
@@ -231,17 +234,13 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("          Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,");
   add("      );");
   add("      if (recentFailed) {");
-  add("        return NextResponse.json" + SG + "({");
-  add('          step: "error", completed: true, error: "Workflow failed — check GitHub Actions for details",');
-  add("        });");
+  add('        return status({ step: "error", completed: true, error: "Workflow failed — check GitHub Actions" });');
   add("      }");
   add("    }");
   add("");
-  add("    return NextResponse.json" + SG + "({ step: \"working\", completed: false });");
+  add("    return status({ step: \"working\", completed: false });");
   add("  } catch {");
-  add("    return NextResponse.json" + SG + "(");
-  add('      { step: "error", completed: true, error: "Status check failed" }, { status: 500 },');
-  add("    );");
+  add('    return status({ step: "error", completed: true, error: "Status check failed" }, 500);');
   add("  }");
   add("}");
 
@@ -289,6 +288,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
@@ -307,9 +307,10 @@ jobs:
       - name: Run Anteater agent
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
+          PROMPT: \${{ inputs.prompt }}
         run: |
           node .github/scripts/apply-changes.mjs \\
-            --prompt "\${{ inputs.prompt }}" \\
+            --prompt "\${PROMPT}" \\
             --allowed-paths "${allowedGlobs.join(",")}" \\
             --blocked-paths "${blockedGlobs.join(",")}"
 
@@ -325,10 +326,12 @@ jobs:
 
       - name: Commit changes
         if: steps.changes.outputs.has_changes == 'true'
+        env:
+          PROMPT: \${{ inputs.prompt }}
         run: |
           git config user.name "anteater[bot]"
           git config user.email "anteater[bot]@users.noreply.github.com"
-          git commit -m "anteater: \${{ inputs.prompt }}"
+          git commit -m "anteater: \${PROMPT}"
 
       - name: Push branch
         if: steps.changes.outputs.has_changes == 'true'
@@ -338,15 +341,18 @@ jobs:
         if: steps.changes.outputs.has_changes == 'true'
         env:
           GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          PROMPT: \${{ inputs.prompt }}
+          REQUEST_ID: \${{ inputs.requestId }}
+          MODE: \${{ inputs.mode }}
         run: |
           gh pr create \\
             --base "\${{ inputs.baseBranch }}" \\
             --head "\${{ inputs.branch }}" \\
-            --title "anteater: \${{ inputs.prompt }}" \\
-            --body "Automated change by Anteater (request \\\`\${{ inputs.requestId }}\\\`).
+            --title "anteater: \${PROMPT}" \\
+            --body "Automated change by Anteater (request \\\`\${REQUEST_ID}\\\`).
 
-          **Prompt:** \${{ inputs.prompt }}
-          **Mode:** \${{ inputs.mode }}"
+          **Prompt:** \${PROMPT}
+          **Mode:** \${MODE}"
 
       - name: Auto-merge PR
         if: steps.changes.outputs.has_changes == 'true' && inputs.autoMerge == 'true'
@@ -390,8 +396,8 @@ async function collectFiles() {
       const rel = relative(process.cwd(), resolve(entry)).replace(/\\\\/g, "/");
       let blocked = false;
       for (const bp of blockedGlobs) {
-        const prefix = bp.replace(/\\*\\*/g, "").replace(/\\*/g, "").replace(/\\/$/, "");
-        if (rel.startsWith(prefix)) { blocked = true; break; }
+        const prefix = bp.replace(/\\/?\\*\\*?$/, "");
+        if (rel === prefix || rel.startsWith(prefix + "/")) { blocked = true; break; }
       }
       if (!blocked && !rel.includes("node_modules")) files.add(rel);
     }
@@ -420,7 +426,7 @@ async function callClaude(prompt, fileContents) {
     },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 8192,
+      max_tokens: 16384,
       system: \`You are Anteater, an AI coding agent. You modify web application source files based on user requests.
 RULES: Make minimal, focused changes. Only modify files that need to change. Preserve existing code style.
 Never modify environment files, API routes, or configuration.
@@ -433,6 +439,7 @@ If no changes are needed, return an empty array: []\`,
 
   if (!res.ok) throw new Error(\`Anthropic API error \${res.status}: \${await res.text()}\`);
   const data = await res.json();
+  if (data.stop_reason === "max_tokens") throw new Error("Response truncated — max_tokens exceeded");
   return JSON.parse(data.content?.[0]?.text || "[]");
 }
 
