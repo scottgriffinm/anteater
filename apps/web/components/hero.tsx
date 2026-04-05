@@ -12,7 +12,7 @@ export function Hero() {
         <span className="text-accent">itself.</span>
       </h1>
 
-      <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed italic">
+      <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
         Describe changes in plain English. Anteater handles the rest.
       </p>
 
