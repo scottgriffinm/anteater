@@ -45,6 +45,8 @@ export interface AnteaterStatusResponse {
   completed: boolean;
   /** Error message if failed */
   error?: string;
+  /** Vercel deployment ID — changes when new code is deployed */
+  deploymentId?: string;
 }
 
 export interface AnteaterBarProps {
