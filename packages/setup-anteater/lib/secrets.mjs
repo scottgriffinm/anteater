@@ -123,7 +123,8 @@ export function setVercelEnv(name, value, environments = ["production", "preview
   }
   for (const env of environments) {
     try {
-      execSync(`echo "${value}" | vercel env add ${name} ${env} --force`, {
+      execSync(`vercel env add ${name} ${env} --force`, {
+        input: value,
         stdio: ["pipe", "ignore", "pipe"],
       });
     } catch {
