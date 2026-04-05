@@ -36,13 +36,14 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
     console.log(`[anteater] New deployment detected, reloading...`);
     stopPolling();
     setPipelineStep("done");
-    // Wait for Vercel CDN propagation, then hard-reload to bypass all caches
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        url.searchParams.set("_anteater", Date.now().toString());
-        window.location.href = url.toString();
-      }
+    // Wait for CDN propagation, then reload with a cache-busted prefetch
+    // so the browser picks up fresh content without a visible query param
+    setTimeout(async () => {
+      if (typeof window === "undefined") return;
+      try {
+        await fetch(window.location.href, { cache: "no-store" });
+      } catch {}
+      window.location.reload();
     }, 4000);
   }, [stopPolling]);
 
