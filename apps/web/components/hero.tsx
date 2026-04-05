@@ -12,8 +12,7 @@ export function Hero() {
       </h1>
 
       <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
-        Describe changes in plain English. Anteater edits your code, opens a PR,
-        and redeploys your app — all through GitHub Actions and Vercel.
+        Describe changes in plain English. Anteater handles the rest.
       </p>
 
       <div className="mt-10 flex flex-col sm:flex-row gap-4">
