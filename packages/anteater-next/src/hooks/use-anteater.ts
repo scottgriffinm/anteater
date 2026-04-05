@@ -20,6 +20,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const branchRef = useRef<string | null>(null);
   const pollingStartRef = useRef<number>(0);
+  const initialDeploymentIdRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -30,6 +31,19 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
 
   // Clean up on unmount
   useEffect(() => stopPolling, [stopPolling]);
+
+  const triggerReload = useCallback(() => {
+    console.log(`[anteater] Reloading page...`);
+    stopPolling();
+    setPipelineStep("done");
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("_anteater", Date.now().toString());
+        window.location.replace(url.toString());
+      }
+    }, 2000);
+  }, [stopPolling]);
 
   const pollStatus = useCallback(async () => {
     const branch = branchRef.current;
@@ -57,7 +71,13 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
       }
 
       const data: AnteaterStatusResponse = await res.json();
-      console.log(`[anteater] Poll status: step=${data.step}, branch=${branch}`, data);
+      console.log(`[anteater] Poll: step=${data.step}, deployId=${data.deploymentId ?? "n/a"}`, { branch });
+
+      // Track the initial deployment ID from the first response
+      if (data.deploymentId && !initialDeploymentIdRef.current) {
+        initialDeploymentIdRef.current = data.deploymentId;
+        console.log(`[anteater] Initial deployment ID: ${data.deploymentId}`);
+      }
 
       if (data.step === "error") {
         console.error(`[anteater] Pipeline error: ${data.error}`, { branch });
@@ -68,41 +88,42 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
         return;
       }
 
-      if (data.step === "done") {
-        console.log(`[anteater] Pipeline complete — reloading in 2s`, { branch });
-        stopPolling();
-        setPipelineStep("done");
-        // Force reload to pick up the new deployment (cache-bust)
-        setTimeout(() => {
-          if (typeof window !== "undefined") {
-            const url = new URL(window.location.href);
-            url.searchParams.set("_anteater", Date.now().toString());
-            window.location.replace(url.toString());
-          }
-        }, 2000);
+      // Detect new deployment: if deployment ID changed, new code is live
+      if (
+        data.step === "redeploying" &&
+        data.deploymentId &&
+        initialDeploymentIdRef.current &&
+        data.deploymentId !== initialDeploymentIdRef.current
+      ) {
+        console.log(`[anteater] New deployment detected: ${initialDeploymentIdRef.current} → ${data.deploymentId}`);
+        triggerReload();
         return;
       }
 
-      // Update the visible step (error and done already handled above)
+      // Server-side "done" fallback (150s timer for non-Vercel environments)
+      if (data.step === "done") {
+        console.log(`[anteater] Pipeline complete (server fallback)`);
+        triggerReload();
+        return;
+      }
+
       setPipelineStep(data.step);
     } catch (err) {
       console.warn(`[anteater] Poll network error (will retry):`, err);
-      // Network error — keep polling, don't fail
     }
-  }, [apiEndpoint, stopPolling]);
+  }, [apiEndpoint, stopPolling, triggerReload]);
 
   const startPolling = useCallback(() => {
     stopPolling();
     pollingStartRef.current = Date.now();
-    // Initial poll immediately
+    initialDeploymentIdRef.current = null;
     pollStatus();
-    // Then poll on interval
     pollingRef.current = setInterval(pollStatus, POLL_INTERVAL);
   }, [stopPolling, pollStatus]);
 
   const submit = useCallback(
     async (request: AnteaterRequest) => {
-      console.log(`[anteater] Submitting request: prompt="${request.prompt}", mode=${request.mode}`);
+      console.log(`[anteater] Submitting: prompt="${request.prompt}", mode=${request.mode}`);
       setStatus("submitting");
       setError(null);
       setResponse(null);
@@ -125,7 +146,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
           return null;
         }
 
-        console.log(`[anteater] Request queued: requestId=${data.requestId}, branch=${data.branch}`);
+        console.log(`[anteater] Queued: requestId=${data.requestId}, branch=${data.branch}`);
         setStatus("success");
         setResponse(data);
         branchRef.current = data.branch;
@@ -139,7 +160,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
         return null;
       }
     },
-    [apiEndpoint, startPolling]
+    [apiEndpoint, startPolling],
   );
 
   const reset = useCallback(() => {
@@ -148,6 +169,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
     setError(null);
     setPipelineStep(null);
     branchRef.current = null;
+    initialDeploymentIdRef.current = null;
     stopPolling();
   }, [stopPolling]);
 

@@ -8,35 +8,39 @@ function log(level: "info" | "warn" | "error", message: string, data?: Record<st
   else console.log(JSON.stringify(entry));
 }
 
+/** Auto-detect repo from Vercel system env vars, fall back to ANTEATER_GITHUB_REPO */
+function getRepo(): string | undefined {
+  if (process.env.ANTEATER_GITHUB_REPO) return process.env.ANTEATER_GITHUB_REPO;
+  const owner = process.env.VERCEL_GIT_REPO_OWNER;
+  const slug = process.env.VERCEL_GIT_REPO_SLUG;
+  if (owner && slug) return `${owner}/${slug}`;
+  return undefined;
+}
+
+/** Return a status response with the current deployment ID attached */
+function status(body: AnteaterStatusResponse, httpStatus?: number) {
+  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID;
+  return NextResponse.json({ ...body, deploymentId }, httpStatus ? { status: httpStatus } : undefined);
+}
+
 /**
  * GET /api/anteater?branch=anteater/run-xxx
  *
- * Polls real pipeline status by checking concrete GitHub state:
- *   1. Does the branch exist?  No  → agent is still working ("initializing" / "working")
- *   2. Does a PR exist?        No  → PR being created ("merging")
- *   3. Is the PR merged?       No  → waiting for merge ("merging")
- *   4. PR merged               Yes → Vercel is redeploying ("redeploying" → "done")
- *
- * We also check for workflow failures to surface real errors.
+ * Polls pipeline status via GitHub state. Deploy detection is handled
+ * client-side by comparing VERCEL_DEPLOYMENT_ID across poll responses.
  */
 export async function GET(request: NextRequest) {
   const branch = request.nextUrl.searchParams.get("branch");
   if (!branch) {
     log("warn", "GET /api/anteater — missing branch param");
-    return NextResponse.json<AnteaterStatusResponse>(
-      { step: "error", completed: true, error: "Missing branch param" },
-      { status: 400 },
-    );
+    return status({ step: "error", completed: true, error: "Missing branch param" }, 400);
   }
 
-  const repo = process.env.ANTEATER_GITHUB_REPO;
+  const repo = getRepo();
   const token = process.env.GITHUB_TOKEN;
   if (!repo || !token) {
     log("error", "GET /api/anteater — server misconfigured", { hasRepo: !!repo, hasToken: !!token });
-    return NextResponse.json<AnteaterStatusResponse>(
-      { step: "error", completed: true, error: "Server misconfigured" },
-      { status: 500 },
-    );
+    return status({ step: "error", completed: true, error: "Server misconfigured" }, 500);
   }
 
   const gh = (url: string) =>
@@ -60,93 +64,35 @@ export async function GET(request: NextRequest) {
       if (prs.length) {
         const pr = prs[0];
 
-        // PR merged → check if Vercel has deployed the new code
         if (pr.merged_at) {
-          const mergedAt = new Date(pr.merged_at).getTime();
-          const mergedAgo = Date.now() - mergedAt;
-
-          // Check Vercel deployment status if token is available
-          const vercelToken = process.env.ANTEATER_VERCEL_TOKEN;
-          const vercelProjectId = process.env.VERCEL_PROJECT_ID;
-
-          if (vercelToken && vercelProjectId) {
-            try {
-              const vercelRes = await fetch(
-                `https://api.vercel.com/v6/deployments?projectId=${vercelProjectId}&limit=1&target=production`,
-                {
-                  headers: { Authorization: `Bearer ${vercelToken}` },
-                  cache: "no-store",
-                },
-              );
-
-              if (vercelRes.ok) {
-                const { deployments } = await vercelRes.json();
-                const latest = deployments?.[0];
-
-                if (latest) {
-                  const deployCreated = new Date(latest.created).getTime();
-                  // Deployment must have been created AFTER the PR merge to be the right one
-                  const isPostMerge = deployCreated > mergedAt;
-                  const isReady = latest.readyState === "READY" || latest.state === "READY";
-
-                  log("info", "GET /api/anteater — Vercel deployment check", {
-                    branch, prNumber: pr.number, mergedAgo,
-                    deployState: latest.readyState || latest.state,
-                    deployCreated: latest.created, isPostMerge, isReady,
-                  });
-
-                  if (isPostMerge && isReady) {
-                    return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
-                  }
-
-                  // Either still waiting for Vercel to start building,
-                  // or the build is in progress
-                  return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
-                }
-              }
-            } catch (vercelErr) {
-              log("warn", "GET /api/anteater — Vercel API check failed, falling back to timer", {
-                error: String(vercelErr),
-              });
-            }
-          }
-
-          // Fallback: no Vercel token configured, use conservative timer
+          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
+          // Client detects deploy via deployment ID change.
+          // Use 150s timer as final fallback for non-Vercel environments.
           const step = mergedAgo > 150_000 ? "done" : "redeploying";
-          log("info", "GET /api/anteater — PR merged (timer fallback)", { branch, prNumber: pr.number, mergedAgo, step });
-          if (step === "done") {
-            return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
-          }
-          return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
+          log("info", "GET /api/anteater — PR merged", { branch, prNumber: pr.number, mergedAgo, step });
+          return status({ step, completed: step === "done" });
         }
 
         if (pr.state === "closed") {
           log("warn", "GET /api/anteater — PR closed without merge", { branch, prNumber: pr.number });
-          return NextResponse.json<AnteaterStatusResponse>({
-            step: "error",
-            completed: true,
-            error: "PR was closed without merging",
-          });
+          return status({ step: "error", completed: true, error: "PR was closed without merging" });
         }
 
-        // PR open, not yet merged
         log("info", "GET /api/anteater — PR open, waiting for merge", { branch, prNumber: pr.number });
-        return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
+        return status({ step: "merging", completed: false });
       }
     }
 
-    // No PR yet — Step 2: Check if branch exists (agent pushes it when done)
+    // No PR yet — check if branch exists
     const branchRes = await gh(
       `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,
     );
-
     if (branchRes.ok) {
-      // Branch pushed but no PR yet — PR is being created
       log("info", "GET /api/anteater — branch exists, PR being created", { branch });
-      return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
+      return status({ step: "merging", completed: false });
     }
 
-    // No branch, no PR — Step 3: Check if the workflow failed
+    // No branch, no PR — check for workflow failures
     const runsRes = await gh(
       `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,
     );
@@ -160,23 +106,15 @@ export async function GET(request: NextRequest) {
       );
       if (recentFailed) {
         log("error", "GET /api/anteater — workflow failed", { branch, runId: recentFailed.id });
-        return NextResponse.json<AnteaterStatusResponse>({
-          step: "error",
-          completed: true,
-          error: "Workflow failed — check GitHub Actions for details",
-        });
+        return status({ step: "error", completed: true, error: "Workflow failed — check GitHub Actions for details" });
       }
     }
 
-    // Still running — agent working on changes
     log("info", "GET /api/anteater — still working", { branch });
-    return NextResponse.json<AnteaterStatusResponse>({ step: "working", completed: false });
+    return status({ step: "working", completed: false });
   } catch (err) {
     log("error", "GET /api/anteater — status check failed", { branch, error: String(err) });
-    return NextResponse.json<AnteaterStatusResponse>(
-      { step: "error", completed: true, error: "Status check failed" },
-      { status: 500 },
-    );
+    return status({ step: "error", completed: true, error: "Status check failed" }, 500);
   }
 }
 
@@ -187,55 +125,38 @@ export async function POST(request: NextRequest) {
     if (!body.prompt?.trim()) {
       log("warn", "POST /api/anteater — empty prompt");
       return NextResponse.json<AnteaterResponse>(
-        {
-          requestId: "",
-          branch: "",
-          status: "error",
-          error: "Prompt is required",
-        },
-        { status: 400 }
+        { requestId: "", branch: "", status: "error", error: "Prompt is required" },
+        { status: 400 },
       );
     }
 
     log("info", "POST /api/anteater — received request", { prompt: body.prompt, mode: body.mode });
 
-    // Auth check — browsers set Sec-Fetch-Site automatically (can't be spoofed)
-    // "same-origin" = request came from the same site (the AnteaterBar)
+    // Auth: same-origin requests are trusted (sec-fetch-site can't be spoofed).
+    // External callers must provide x-anteater-secret if ANTEATER_SECRET is set.
     const secret = process.env.ANTEATER_SECRET;
     if (secret) {
       const fetchSite = request.headers.get("sec-fetch-site");
-      const isSameOrigin = fetchSite === "same-origin";
-
-      if (!isSameOrigin) {
+      if (fetchSite !== "same-origin") {
         const authHeader = request.headers.get("x-anteater-secret");
         if (authHeader !== secret) {
           log("warn", "POST /api/anteater — unauthorized request", { fetchSite });
           return NextResponse.json<AnteaterResponse>(
-            {
-              requestId: "",
-              branch: "",
-              status: "error",
-              error: "Unauthorized",
-            },
-            { status: 401 }
+            { requestId: "", branch: "", status: "error", error: "Unauthorized" },
+            { status: 401 },
           );
         }
       }
     }
 
-    const repo = process.env.ANTEATER_GITHUB_REPO;
+    const repo = getRepo();
     const token = process.env.GITHUB_TOKEN;
 
     if (!repo || !token) {
       log("error", "POST /api/anteater — server misconfigured", { hasRepo: !!repo, hasToken: !!token });
       return NextResponse.json<AnteaterResponse>(
-        {
-          requestId: "",
-          branch: "",
-          status: "error",
-          error: "Server misconfigured: missing ANTEATER_GITHUB_REPO or GITHUB_TOKEN",
-        },
-        { status: 500 }
+        { requestId: "", branch: "", status: "error", error: "Server misconfigured: missing GITHUB_TOKEN (and cannot detect repo)" },
+        { status: 500 },
       );
     }
 
@@ -245,9 +166,8 @@ export async function POST(request: NextRequest) {
         ? `anteater/friend-${requestId}`
         : `anteater/run-${requestId}`;
 
-    log("info", "POST /api/anteater — dispatching workflow", { requestId, branch, prompt: body.prompt });
+    log("info", "POST /api/anteater — dispatching workflow", { requestId, branch, repo, prompt: body.prompt });
 
-    // Dispatch GitHub Actions workflow
     const dispatchRes = await fetch(
       `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/dispatches`,
       {
@@ -268,40 +188,25 @@ export async function POST(request: NextRequest) {
             autoMerge: String(body.mode !== "copy"),
           },
         }),
-      }
+      },
     );
 
     if (!dispatchRes.ok) {
       const err = await dispatchRes.text();
       log("error", "POST /api/anteater — GitHub dispatch failed", { requestId, status: dispatchRes.status, error: err });
       return NextResponse.json<AnteaterResponse>(
-        {
-          requestId,
-          branch,
-          status: "error",
-          error: `GitHub dispatch failed: ${dispatchRes.status} ${err}`,
-        },
-        { status: 502 }
+        { requestId, branch, status: "error", error: `GitHub dispatch failed: ${dispatchRes.status} ${err}` },
+        { status: 502 },
       );
     }
 
     log("info", "POST /api/anteater — workflow dispatched successfully", { requestId, branch });
-
-    return NextResponse.json<AnteaterResponse>({
-      requestId,
-      branch,
-      status: "queued",
-    });
+    return NextResponse.json<AnteaterResponse>({ requestId, branch, status: "queued" });
   } catch (err) {
     log("error", "POST /api/anteater — request failed", { error: String(err) });
     return NextResponse.json<AnteaterResponse>(
-      {
-        requestId: "",
-        branch: "",
-        status: "error",
-        error: "Invalid request body",
-      },
-      { status: 400 }
+      { requestId: "", branch: "", status: "error", error: "Invalid request body" },
+      { status: 400 },
     );
   }
 }
