@@ -211,8 +211,8 @@ async function main() {
   // ─── Push workflow ──────────────────────────────────────────
   if (scaffolded.some((f) => f.includes("anteater.yml"))) {
     await spinner("Pushing workflow to GitHub", () => {
-      execSync(`git add .github/workflows/anteater.yml .github/scripts/apply-changes.mjs`, { cwd, stdio: "ignore" });
-      execSync(`git commit -m "chore: add Anteater workflow and agent script"`, { cwd, stdio: "ignore" });
+      execSync(`git add .github/workflows/anteater.yml`, { cwd, stdio: "ignore" });
+      execSync(`git commit -m "chore: add Anteater workflow"`, { cwd, stdio: "ignore" });
       execSync(`git push origin ${productionBranch}`, { cwd, stdio: "ignore" });
     });
 

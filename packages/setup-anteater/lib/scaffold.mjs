@@ -254,6 +254,9 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
  * Generate the GitHub Actions workflow.
  */
 export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch }) {
+  const allowed = allowedGlobs.join(", ");
+  const blocked = blockedGlobs.join(", ");
+
   return `name: Anteater Apply
 
 on:
@@ -304,15 +307,32 @@ jobs:
         with:
           node-version: 22
 
-      - name: Run Anteater agent
-        env:
-          ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
-          PROMPT: \${{ inputs.prompt }}
+      - name: Install dependencies
         run: |
-          node .github/scripts/apply-changes.mjs \\
-            --prompt "\${PROMPT}" \\
-            --allowed-paths "${allowedGlobs.join(",")}" \\
-            --blocked-paths "${blockedGlobs.join(",")}"
+          npm install -g pnpm@9 --silent
+          pnpm install --frozen-lockfile
+
+      - name: Run Anteater agent
+        uses: anthropics/claude-code-action@v1
+        with:
+          prompt: |
+            You are Anteater, an AI agent that modifies a web app based on user requests.
+
+            USER REQUEST: \${{ inputs.prompt }}
+
+            RULES:
+            - Only edit files under: ${allowed}
+            - NEVER edit: ${blocked}
+            - Make minimal, focused changes
+            - Preserve existing code style
+            - After making changes, run the build command to verify the build passes
+            - If the build fails, read the error output and fix the issues, then build again
+            - Keep iterating until the build passes or you've tried 3 times
+            - Do NOT commit — just leave the changed files on disk
+
+            IMPORTANT: Always verify your changes compile by running the build command.
+          anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: "--allowedTools Edit,Read,Write,Bash,Glob,Grep --max-turns 25"
 
       - name: Check for changes
         id: changes
@@ -540,12 +560,6 @@ export async function scaffoldFiles(cwd, options) {
   const workflowPath = join(cwd, ".github/workflows/anteater.yml");
   if (await writeIfNotExists(workflowPath, generateWorkflow(options))) {
     results.push(".github/workflows/anteater.yml");
-  }
-
-  // AI apply script
-  const scriptPath = join(cwd, ".github/scripts/apply-changes.mjs");
-  if (await writeIfNotExists(scriptPath, generateApplyScript())) {
-    results.push(".github/scripts/apply-changes.mjs");
   }
 
   // Patch layout
