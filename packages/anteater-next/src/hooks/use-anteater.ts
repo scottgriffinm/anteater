@@ -33,16 +33,17 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
   useEffect(() => stopPolling, [stopPolling]);
 
   const triggerReload = useCallback(() => {
-    console.log(`[anteater] Reloading page...`);
+    console.log(`[anteater] New deployment detected, reloading...`);
     stopPolling();
     setPipelineStep("done");
+    // Wait for Vercel CDN propagation, then hard-reload to bypass all caches
     setTimeout(() => {
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         url.searchParams.set("_anteater", Date.now().toString());
-        window.location.replace(url.toString());
+        window.location.href = url.toString();
       }
-    }, 2000);
+    }, 4000);
   }, [stopPolling]);
 
   const pollStatus = useCallback(async () => {
