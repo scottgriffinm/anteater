@@ -1,43 +1,81 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import type { AnteaterRequest, AnteaterResponse } from "../types";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "../types";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
-export type PipelineStep = "initializing" | "working" | "merging" | "redeploying";
+export type PipelineStep = "initializing" | "working" | "merging" | "redeploying" | "done";
 
 const PIPELINE_STEPS: PipelineStep[] = ["initializing", "working", "merging", "redeploying"];
+
+const POLL_INTERVAL = 3000;
 
 export function useAnteater(apiEndpoint: string = "/api/anteater") {
   const [status, setStatus] = useState<Status>("idle");
   const [response, setResponse] = useState<AnteaterResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pipelineStep, setPipelineStep] = useState<PipelineStep | null>(null);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const branchRef = useRef<string | null>(null);
 
-  const clearTimers = useCallback(() => {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
   }, []);
 
-  const startPipeline = useCallback(() => {
-    clearTimers();
-    setPipelineStep("initializing");
+  // Clean up on unmount
+  useEffect(() => stopPolling, [stopPolling]);
 
-    // Progress through steps after API success
-    const t1 = setTimeout(() => setPipelineStep("working"), 3000);
-    const t2 = setTimeout(() => setPipelineStep("merging"), 8000);
-    const t3 = setTimeout(() => setPipelineStep("redeploying"), 13000);
-    const t4 = setTimeout(() => {
-      // Reload the page to pick up redeployment
-      if (typeof window !== "undefined") {
-        window.location.reload();
+  const pollStatus = useCallback(async () => {
+    const branch = branchRef.current;
+    if (!branch) return;
+
+    try {
+      const res = await fetch(`${apiEndpoint}?branch=${encodeURIComponent(branch)}`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) return;
+
+      const data: AnteaterStatusResponse = await res.json();
+
+      if (data.step === "error") {
+        stopPolling();
+        setStatus("error");
+        setError(data.error || "Workflow failed");
+        setPipelineStep(null);
+        return;
       }
-    }, 17000);
 
-    timersRef.current = [t1, t2, t3, t4];
-  }, [clearTimers]);
+      if (data.step === "done") {
+        stopPolling();
+        setPipelineStep("done");
+        // Reload to pick up the new deployment
+        setTimeout(() => {
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+        }, 2000);
+        return;
+      }
+
+      // Update the visible step (error and done already handled above)
+      setPipelineStep(data.step);
+    } catch {
+      // Network error — keep polling, don't fail
+    }
+  }, [apiEndpoint, stopPolling]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    // Initial poll immediately
+    pollStatus();
+    // Then poll on interval
+    pollingRef.current = setInterval(pollStatus, POLL_INTERVAL);
+  }, [stopPolling, pollStatus]);
 
   const submit = useCallback(
     async (request: AnteaterRequest) => {
@@ -64,7 +102,8 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
 
         setStatus("success");
         setResponse(data);
-        startPipeline();
+        branchRef.current = data.branch;
+        startPolling();
         return data;
       } catch (err) {
         setStatus("error");
@@ -73,7 +112,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
         return null;
       }
     },
-    [apiEndpoint, startPipeline]
+    [apiEndpoint, startPolling]
   );
 
   const reset = useCallback(() => {
@@ -81,8 +120,9 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
     setResponse(null);
     setError(null);
     setPipelineStep(null);
-    clearTimers();
-  }, [clearTimers]);
+    branchRef.current = null;
+    stopPolling();
+  }, [stopPolling]);
 
   return { status, response, error, pipelineStep, pipelineSteps: PIPELINE_STEPS, submit, reset };
 }

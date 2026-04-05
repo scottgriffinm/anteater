@@ -38,6 +38,15 @@ export interface AnteaterResponse {
   error?: string;
 }
 
+export interface AnteaterStatusResponse {
+  /** Current pipeline step */
+  step: "initializing" | "working" | "merging" | "redeploying" | "done" | "error";
+  /** Whether the workflow has completed */
+  completed: boolean;
+  /** Error message if failed */
+  error?: string;
+}
+
 export interface AnteaterBarProps {
   /** API endpoint to submit prompts to */
   apiEndpoint?: string;
