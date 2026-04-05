@@ -12,7 +12,7 @@ export function Hero() {
         <span className="text-accent">itself.</span>
       </h1>
 
-      <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed">
+      <p className="mt-6 max-w-xl text-lg text-muted leading-relaxed italic">
         Describe changes in plain English. Anteater handles the rest.
       </p>
 
@@ -46,7 +46,7 @@ export function Hero() {
         </div>
         <div className="p-6 font-mono text-sm leading-relaxed text-left">
           <div className="text-muted">
-            <span className="text-accent">{">"}</span> Make the hero headline larger and add a gradient
+            <span className="text-accent">{">"}></span> Make the hero headline larger and add a gradient
           </div>
           <div className="mt-4 text-muted/60">
             <span className="text-yellow-500">anteater</span> Dispatching to GitHub Actions...
