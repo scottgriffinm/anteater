@@ -41,75 +41,71 @@ export async function GET(request: NextRequest) {
     });
 
   try {
-    // Step 1: Check if the branch exists yet (agent pushes it when done)
-    const branchRes = await gh(
-      `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,
-    );
-
-    if (!branchRes.ok) {
-      // Branch doesn't exist — check if the workflow is still running or failed
-      const runsRes = await gh(
-        `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,
-      );
-      if (runsRes.ok) {
-        const { workflow_runs: runs } = await runsRes.json();
-        // Find a recent failed run (within last 5 minutes)
-        const recentFailed = runs?.find(
-          (r: { status: string; conclusion: string; created_at: string }) =>
-            r.status === "completed" &&
-            r.conclusion === "failure" &&
-            Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
-        );
-        if (recentFailed) {
-          return NextResponse.json<AnteaterStatusResponse>({
-            step: "error",
-            completed: true,
-            error: "Workflow failed — check GitHub Actions for details",
-          });
-        }
-      }
-      // Still running
-      return NextResponse.json<AnteaterStatusResponse>({ step: "working", completed: false });
-    }
-
-    // Branch exists — Step 2: Check for a PR
+    // Step 1: Check for a PR first (survives branch deletion after merge)
     const prRes = await gh(
       `https://api.github.com/repos/${repo}/pulls?head=${repo.split("/")[0]}:${branch}&state=all&per_page=1`,
     );
 
-    if (!prRes.ok) {
-      return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
-    }
+    if (prRes.ok) {
+      const prs = await prRes.json();
+      if (prs.length) {
+        const pr = prs[0];
 
-    const prs = await prRes.json();
-    if (!prs.length) {
-      // Branch pushed but PR not created yet
-      return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
-    }
+        // PR merged → redeploying or done
+        if (pr.merged_at) {
+          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
+          if (mergedAgo > 30_000) {
+            return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
+          }
+          return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
+        }
 
-    const pr = prs[0];
+        if (pr.state === "closed") {
+          return NextResponse.json<AnteaterStatusResponse>({
+            step: "error",
+            completed: true,
+            error: "PR was closed without merging",
+          });
+        }
 
-    // Step 3: Check if PR is merged
-    if (pr.merged_at) {
-      // PR is merged — Vercel is redeploying.
-      // Give Vercel ~30s to deploy, then mark as done.
-      const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
-      if (mergedAgo > 30_000) {
-        return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
+        // PR open, not yet merged
+        return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
       }
-      return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
     }
 
-    if (pr.state === "closed") {
-      return NextResponse.json<AnteaterStatusResponse>({
-        step: "error",
-        completed: true,
-        error: "PR was closed without merging",
-      });
+    // No PR yet — Step 2: Check if branch exists (agent pushes it when done)
+    const branchRes = await gh(
+      `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,
+    );
+
+    if (branchRes.ok) {
+      // Branch pushed but no PR yet — PR is being created
+      return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
     }
 
-    // PR open, not yet merged
-    return NextResponse.json<AnteaterStatusResponse>({ step: "merging", completed: false });
+    // No branch, no PR — Step 3: Check if the workflow failed
+    const runsRes = await gh(
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,
+    );
+    if (runsRes.ok) {
+      const { workflow_runs: runs } = await runsRes.json();
+      const recentFailed = runs?.find(
+        (r: { status: string; conclusion: string; created_at: string }) =>
+          r.status === "completed" &&
+          r.conclusion === "failure" &&
+          Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
+      );
+      if (recentFailed) {
+        return NextResponse.json<AnteaterStatusResponse>({
+          step: "error",
+          completed: true,
+          error: "Workflow failed — check GitHub Actions for details",
+        });
+      }
+    }
+
+    // Still running — agent working on changes
+    return NextResponse.json<AnteaterStatusResponse>({ step: "working", completed: false });
   } catch {
     return NextResponse.json<AnteaterStatusResponse>(
       { step: "error", completed: true, error: "Status check failed" },

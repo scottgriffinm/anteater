@@ -98,4 +98,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr merge "${{ inputs.branch }}" --squash --auto
+          gh pr merge "${{ inputs.branch }}" --squash --delete-branch

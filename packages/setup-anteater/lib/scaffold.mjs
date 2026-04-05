@@ -340,7 +340,7 @@ jobs:
         if: steps.changes.outputs.has_changes == 'true' && inputs.autoMerge == 'true'
         env:
           GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge "\${{ inputs.branch }}" --squash --auto
+        run: gh pr merge "\${{ inputs.branch }}" --squash --delete-branch
 `;
 }
 
