@@ -86,6 +86,20 @@ export async function detectProject(cwd) {
     } catch {
       // No remote configured
     }
+
+    // Detect default branch (what HEAD points to on the remote)
+    try {
+      const head = execSync("git symbolic-ref refs/remotes/origin/HEAD", { cwd, encoding: "utf-8" }).trim();
+      result.defaultBranch = head.replace("refs/remotes/origin/", "");
+    } catch {
+      // Fallback: check local HEAD branch name
+      try {
+        const branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
+        result.defaultBranch = branch;
+      } catch {
+        result.defaultBranch = "main";
+      }
+    }
   }
 
   return result;

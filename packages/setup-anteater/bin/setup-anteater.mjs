@@ -17,7 +17,7 @@ import {
 import { detectProject } from "../lib/detect.mjs";
 import { scaffoldFiles } from "../lib/scaffold.mjs";
 import {
-  validateAnthropicKey, setGitHubSecret, setVercelEnv,
+  validateAnthropicKey, validateGitHubToken, setGitHubSecret, setVercelEnv,
   generateSecret, writeEnvLocal,
 } from "../lib/secrets.mjs";
 
@@ -43,8 +43,10 @@ async function main() {
 
   ok(`Next.js ${project.nextVersion ?? "(unknown version)"} ${project.isAppRouter ? "(App Router)" : project.isPagesRouter ? "(Pages Router)" : ""}`);
   if (project.isTypeScript) ok("TypeScript");
-  if (project.hasGit) ok(`Git repo: ${project.gitRemote ?? "(no remote)"}`);
-  else {
+  if (project.hasGit) {
+    ok(`Git repo: ${project.gitRemote ?? "(no remote)"}`);
+    if (project.defaultBranch) ok(`Default branch: ${project.defaultBranch}`);
+  } else {
     fail("No git repository found. Initialize one first: git init");
     process.exit(1);
   }
@@ -86,7 +88,7 @@ async function main() {
   let githubToken;
   const authMethod = await select("How would you like to authenticate?", [
     { value: "gh", label: "Use existing GitHub CLI auth", hint: "recommended if gh is installed" },
-    { value: "pat", label: "Paste a personal access token", hint: "needs repo + workflow scopes" },
+    { value: "pat", label: "Paste a personal access token", hint: "fine-grained: Actions + Contents + Pull Requests" },
   ]);
 
   if (authMethod === "gh") {
@@ -97,6 +99,30 @@ async function main() {
       fail("GitHub CLI not authenticated. Run: gh auth login");
       info("Or re-run setup and choose the PAT option.");
       process.exit(1);
+    }
+
+    // Validate the gh token has the right scopes
+    const check = await spinner("Checking token permissions", () =>
+      validateGitHubToken(githubToken, project.gitRemote)
+    );
+
+    if (!check.ok && check.missing.length > 0 && !check.missing.includes("unknown")) {
+      warn(`Token is missing required scopes: ${check.missing.join(", ")}`);
+      info("Upgrading token scopes automatically...");
+      try {
+        execSync(`gh auth refresh --scopes ${check.missing.join(",")}`, {
+          stdio: "inherit",
+        });
+        githubToken = execSync("gh auth token", { encoding: "utf-8" }).trim();
+        ok("Token scopes updated");
+      } catch {
+        fail("Could not upgrade token scopes.");
+        info("Re-run: gh auth refresh --scopes repo,workflow");
+        info("Or re-run setup and choose the PAT option.");
+        process.exit(1);
+      }
+    } else if (check.ok) {
+      ok("Token has the required permissions");
     }
   } else {
     info("Create a fine-grained PAT with these permissions on your repo:");
@@ -110,7 +136,18 @@ async function main() {
       fail("GitHub token is required.");
       process.exit(1);
     }
-    ok("Token saved");
+
+    // Validate the PAT
+    const check = await spinner("Checking token permissions", () =>
+      validateGitHubToken(githubToken, project.gitRemote)
+    );
+
+    if (!check.ok) {
+      fail(`Token is missing required permissions: ${check.missing.join(", ")}`);
+      info("Create a new token with the correct scopes and try again.");
+      process.exit(1);
+    }
+    ok("Token has the required permissions");
   }
   blank();
 
@@ -172,12 +209,14 @@ async function main() {
   });
 
   // Scaffold files
+  const productionBranch = project.defaultBranch || "main";
   const scaffolded = await spinner("Creating Anteater files", () =>
     scaffoldFiles(cwd, {
       repo: project.gitRemote,
       allowedGlobs,
       blockedGlobs,
       autoMerge,
+      productionBranch,
       isTypeScript: project.isTypeScript,
       isAppRouter: project.isAppRouter,
       layoutFile: project.layoutFile,
@@ -226,6 +265,94 @@ async function main() {
     info(`  ANTEATER_GITHUB_REPO = ${project.gitRemote}`);
   }
 
+  // ─── Activate workflow ────────────────────────────────────────
+  // GitHub only registers a workflow after it sees the file in a push.
+  // We commit + push the scaffolded files, then verify the workflow is active.
+  if (scaffolded.some((f) => f.includes("anteater.yml"))) {
+    const shouldPush = await confirm("Push Anteater files to GitHub to activate the workflow?");
+    if (shouldPush) {
+      await spinner("Committing and pushing Anteater files", () => {
+        execSync(`git add .github/workflows/anteater.yml .github/scripts/apply-changes.mjs`, { cwd, stdio: "ignore" });
+        execSync(`git commit -m "chore: add Anteater workflow and agent script"`, { cwd, stdio: "ignore" });
+        execSync(`git push origin ${productionBranch}`, { cwd, stdio: "ignore" });
+      });
+
+      // Verify GitHub registered the workflow
+      const activated = await spinner("Verifying workflow is active on GitHub", async () => {
+        // Give GitHub a moment to process
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const res = await fetch(
+            `https://api.github.com/repos/${project.gitRemote}/actions/workflows`,
+            {
+              headers: {
+                Authorization: `Bearer ${githubToken}`,
+                Accept: "application/vnd.github+json",
+              },
+            }
+          );
+          const data = await res.json();
+          return data.workflows?.some((w) => w.path === ".github/workflows/anteater.yml" && w.state === "active");
+        } catch {
+          return false;
+        }
+      });
+
+      if (activated) {
+        ok("Workflow is active on GitHub — dispatches will work");
+      } else {
+        warn("Workflow not detected yet. Visit your repo's Actions tab to enable it:");
+        info(`  ${cyan(`https://github.com/${project.gitRemote}/actions`)}`);
+      }
+    } else {
+      warn("Workflow won't be active until .github/workflows/anteater.yml is pushed.");
+      info("After pushing, visit your repo's Actions tab to verify it's active:");
+      info(`  ${cyan(`https://github.com/${project.gitRemote}/actions`)}`);
+    }
+  }
+
+  // ─── End-to-end verification ────────────────────────────────
+  const shouldVerify = await confirm("Run a test dispatch to verify everything works?");
+  if (shouldVerify) {
+    const dispatchOk = await spinner("Sending test dispatch to GitHub Actions", async () => {
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${project.gitRemote}/actions/workflows/anteater.yml/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${githubToken}`,
+              Accept: "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+            body: JSON.stringify({
+              ref: productionBranch,
+              inputs: {
+                requestId: "setup-test",
+                prompt: "setup verification — no changes expected",
+                mode: "prod",
+                branch: "anteater/setup-test",
+                baseBranch: productionBranch,
+                autoMerge: "false",
+              },
+            }),
+          }
+        );
+        return res.status === 204;
+      } catch {
+        return false;
+      }
+    });
+
+    if (dispatchOk) {
+      ok("Test dispatch succeeded — the full pipeline is working");
+      info(`Check the run at: ${cyan(`https://github.com/${project.gitRemote}/actions`)}`);
+    } else {
+      warn("Test dispatch failed. The workflow may not be active yet, or the token lacks permissions.");
+      info(`Check manually: ${cyan(`https://github.com/${project.gitRemote}/actions`)}`);
+    }
+  }
+
   // ─── Done! ──────────────────────────────────────────────────
   blank();
   console.log(`  ${bold(green("Done! Anteater is ready."))}`);
@@ -233,7 +360,7 @@ async function main() {
   info(`Run ${cyan(`${project.packageManager} dev`)} and look for the "${green("Edit this page")}" button.`);
   blank();
   info("Your users can now modify your app by typing in the Anteater bar.");
-  info("All changes go through PRs — nothing touches main without your rules.");
+  info(`All changes go through PRs — nothing touches ${productionBranch} without your rules.`);
   blank();
 }
 

@@ -18,7 +18,7 @@ async function writeIfNotExists(path, content) {
 /**
  * Generate anteater.config.ts
  */
-export function generateConfig({ repo, allowedGlobs, blockedGlobs, autoMerge, isTypeScript }) {
+export function generateConfig({ repo, allowedGlobs, blockedGlobs, autoMerge, isTypeScript, productionBranch }) {
   const ext = isTypeScript ? "ts" : "js";
   const typeImport = isTypeScript
     ? `import type { AnteaterConfig } from "@anteater/next";\n\n`
@@ -29,7 +29,7 @@ export function generateConfig({ repo, allowedGlobs, blockedGlobs, autoMerge, is
     filename: `anteater.config.${ext}`,
     content: `${typeImport}const config${typeAnnotation} = {
   repo: "${repo}",
-  productionBranch: "main",
+  productionBranch: "${productionBranch}",
   modes: ["prod", "copy"],
   autoMerge: ${autoMerge},
 
@@ -54,7 +54,7 @@ export default config;
 /**
  * Generate API route handler.
  */
-export function generateApiRoute({ isTypeScript }) {
+export function generateApiRoute({ isTypeScript, productionBranch }) {
   const ext = isTypeScript ? "ts" : "js";
   const typeImports = isTypeScript
     ? `import type { AnteaterRequest, AnteaterResponse } from "@anteater/next";\n`
@@ -115,13 +115,13 @@ export async function POST(request${isTypeScript ? ": NextRequest" : ""}) {
           "X-GitHub-Api-Version": "2022-11-28",
         },
         body: JSON.stringify({
-          ref: "main",
+          ref: "${productionBranch}",
           inputs: {
             requestId,
             prompt: body.prompt,
             mode: body.mode || "prod",
             branch,
-            baseBranch: "main",
+            baseBranch: "${productionBranch}",
             autoMerge: String(body.mode !== "copy"),
           },
         }),
@@ -151,7 +151,7 @@ export async function POST(request${isTypeScript ? ": NextRequest" : ""}) {
 /**
  * Generate the GitHub Actions workflow.
  */
-export function generateWorkflow({ allowedGlobs, blockedGlobs }) {
+export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch }) {
   return `name: Anteater Apply
 
 on:
@@ -173,7 +173,7 @@ on:
       baseBranch:
         description: "Base branch to fork from"
         required: true
-        default: "main"
+        default: "${productionBranch}"
       autoMerge:
         description: "Auto-merge the PR if true"
         required: false

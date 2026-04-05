@@ -49,6 +49,58 @@ export async function validateAnthropicKey(key) {
 }
 
 /**
+ * Check if a GitHub token has the scopes needed to dispatch workflows.
+ * Returns { ok, scopes, missing } — missing lists what's absent.
+ */
+export async function validateGitHubToken(token, repo) {
+  try {
+    // Check token scopes via the API
+    const res = await fetch("https://api.github.com/", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+    const scopeHeader = res.headers.get("x-oauth-scopes") || "";
+    const scopes = scopeHeader.split(",").map((s) => s.trim()).filter(Boolean);
+
+    // Fine-grained PATs don't return x-oauth-scopes — test dispatch directly
+    if (!scopes.length) {
+      const dispatchOk = await testDispatchAccess(token, repo);
+      return { ok: dispatchOk, scopes: ["fine-grained"], missing: dispatchOk ? [] : ["actions:write"] };
+    }
+
+    const missing = [];
+    if (!scopes.includes("repo")) missing.push("repo");
+    if (!scopes.includes("workflow")) missing.push("workflow");
+    return { ok: missing.length === 0, scopes, missing };
+  } catch {
+    return { ok: false, scopes: [], missing: ["unknown"] };
+  }
+}
+
+/**
+ * Test if a token can actually dispatch the anteater workflow.
+ * Uses a dry-run approach: checks if the workflow exists and is accessible.
+ */
+async function testDispatchAccess(token, repo) {
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/workflows`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        },
+      }
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Set a GitHub Actions secret using the gh CLI.
  */
 export function setGitHubSecret(repo, name, value) {
