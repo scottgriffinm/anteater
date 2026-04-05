@@ -53,189 +53,201 @@ export default config;
 
 /**
  * Generate API route handler.
+ *
+ * Uses string concatenation instead of nested template literals to avoid
+ * escape-sequence hell (template literals inside template literals).
  */
 export function generateApiRoute({ isTypeScript, productionBranch }) {
   const ext = isTypeScript ? "ts" : "js";
-  const typeImports = isTypeScript
-    ? `import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";\n`
-    : "";
-  const reqType = isTypeScript ? ": AnteaterRequest" : "";
-  const resGeneric = isTypeScript ? "<AnteaterResponse>" : "";
-  const statusGeneric = isTypeScript ? "<AnteaterStatusResponse>" : "";
+  const TS = isTypeScript; // shorthand
+  const lines = [];
+  const add = (s) => lines.push(s);
+
+  // --- Imports ---
+  add('import { NextRequest, NextResponse } from "next/server";');
+  if (TS) add('import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";');
+  add("");
+
+  // --- Shared helper (used by both POST and GET) ---
+  add("function ghFetch(url" + (TS ? ": string" : "") + ") {");
+  add("  const token = process.env.GITHUB_TOKEN;");
+  add("  return fetch(url, {");
+  add("    headers: {");
+  add("      Authorization: `Bearer ${token}`,");
+  add('      Accept: "application/vnd.github+json",');
+  add('      "X-GitHub-Api-Version": "2022-11-28",');
+  add("    },");
+  add('    cache: "no-store",');
+  add("  });");
+  add("}");
+  add("");
+
+  // --- POST handler ---
+  add("export async function POST(request" + (TS ? ": NextRequest" : "") + ") {");
+  add("  try {");
+  add("    const body" + (TS ? ": AnteaterRequest" : "") + " = await request.json();");
+  add("");
+  add("    if (!body.prompt?.trim()) {");
+  add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('        { requestId: "", branch: "", status: "error", error: "Prompt is required" },');
+  add("        { status: 400 }");
+  add("      );");
+  add("    }");
+  add("");
+  add("    // Auth: sec-fetch-site for same-origin (AnteaterBar), x-anteater-secret for external");
+  add("    const secret = process.env.ANTEATER_SECRET;");
+  add("    if (secret) {");
+  add('      const fetchSite = request.headers.get("sec-fetch-site");');
+  add('      const isSameOrigin = fetchSite === "same-origin";');
+  add("      if (!isSameOrigin) {");
+  add('        const authHeader = request.headers.get("x-anteater-secret");');
+  add("        if (authHeader !== secret) {");
+  add("          return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('            { requestId: "", branch: "", status: "error", error: "Unauthorized" },');
+  add("            { status: 401 }");
+  add("          );");
+  add("        }");
+  add("      }");
+  add("    }");
+  add("");
+  add("    const repo = process.env.ANTEATER_GITHUB_REPO;");
+  add("    const token = process.env.GITHUB_TOKEN;");
+  add("    if (!repo || !token) {");
+  add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('        { requestId: "", branch: "", status: "error", error: "Server misconfigured" },');
+  add("        { status: 500 }");
+  add("      );");
+  add("    }");
+  add("");
+  add("    const requestId = crypto.randomUUID().slice(0, 8);");
+  add("    const branch = body.mode === \"copy\"");
+  add("      ? `anteater/friend-${requestId}`");
+  add("      : `anteater/run-${requestId}`;");
+  add("");
+  add("    const dispatchRes = await fetch(");
+  add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/dispatches`,");
+  add("      {");
+  add('        method: "POST",');
+  add("        headers: {");
+  add("          Authorization: `Bearer ${token}`,");
+  add('          Accept: "application/vnd.github+json",');
+  add('          "X-GitHub-Api-Version": "2022-11-28",');
+  add("        },");
+  add("        body: JSON.stringify({");
+  add('          ref: "' + productionBranch + '",');
+  add("          inputs: {");
+  add("            requestId,");
+  add("            prompt: body.prompt,");
+  add('            mode: body.mode || "prod",');
+  add("            branch,");
+  add('            baseBranch: "' + productionBranch + '",');
+  add('            autoMerge: String(body.mode !== "copy"),');
+  add("          },");
+  add("        }),");
+  add("      }");
+  add("    );");
+  add("");
+  add("    if (!dispatchRes.ok) {");
+  add("      const err = await dispatchRes.text();");
+  add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add("        { requestId, branch, status: \"error\", error: `GitHub dispatch failed: ${dispatchRes.status}` },");
+  add("        { status: 502 }");
+  add("      );");
+  add("    }");
+  add("");
+  add("    return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "({ requestId, branch, status: \"queued\" });");
+  add("  } catch {");
+  add("    return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('      { requestId: "", branch: "", status: "error", error: "Invalid request body" },');
+  add("      { status: 400 }");
+  add("    );");
+  add("  }");
+  add("}");
+  add("");
+
+  // --- GET handler (status polling) ---
+  const SG = TS ? "<AnteaterStatusResponse>" : "";
+  add("/**");
+  add(" * GET /api/anteater?branch=anteater/run-xxx");
+  add(" * Polls real pipeline status: PR first, then branch, then workflow failures.");
+  add(" */");
+  add("export async function GET(request" + (TS ? ": NextRequest" : "") + ") {");
+  add("  const branch = request.nextUrl.searchParams.get(\"branch\");");
+  add("  if (!branch) {");
+  add("    return NextResponse.json" + SG + "(");
+  add('      { step: "error", completed: true, error: "Missing branch param" }, { status: 400 },');
+  add("    );");
+  add("  }");
+  add("");
+  add("  const repo = process.env.ANTEATER_GITHUB_REPO;");
+  add("  const token = process.env.GITHUB_TOKEN;");
+  add("  if (!repo || !token) {");
+  add("    return NextResponse.json" + SG + "(");
+  add('      { step: "error", completed: true, error: "Server misconfigured" }, { status: 500 },');
+  add("    );");
+  add("  }");
+  add("");
+  add("  try {");
+  add("    // Step 1: Check for PR first (survives branch deletion after merge)");
+  add("    const prRes = await ghFetch(");
+  add("      `https://api.github.com/repos/${repo}/pulls?head=${repo.split(\"/\")[0]}:${branch}&state=all&per_page=1`,");
+  add("    );");
+  add("    if (prRes.ok) {");
+  add("      const prs = await prRes.json();");
+  add("      if (prs.length) {");
+  add("        const pr = prs[0];");
+  add("        if (pr.merged_at) {");
+  add("          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
+  add("          if (mergedAgo > 30000) {");
+  add("            return NextResponse.json" + SG + "({ step: \"done\", completed: true });");
+  add("          }");
+  add("          return NextResponse.json" + SG + "({ step: \"redeploying\", completed: false });");
+  add("        }");
+  add("        if (pr.state === \"closed\") {");
+  add("          return NextResponse.json" + SG + "({");
+  add('            step: "error", completed: true, error: "PR was closed without merging",');
+  add("          });");
+  add("        }");
+  add("        return NextResponse.json" + SG + "({ step: \"merging\", completed: false });");
+  add("      }");
+  add("    }");
+  add("");
+  add("    // Step 2: Check if branch exists");
+  add("    const branchRes = await ghFetch(");
+  add("      `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,");
+  add("    );");
+  add("    if (branchRes.ok) {");
+  add("      return NextResponse.json" + SG + "({ step: \"merging\", completed: false });");
+  add("    }");
+  add("");
+  add("    // Step 3: No branch, no PR — check for workflow failure");
+  add("    const runsRes = await ghFetch(");
+  add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,");
+  add("    );");
+  add("    if (runsRes.ok) {");
+  add("      const { workflow_runs: runs } = await runsRes.json();");
+  add("      const recentFailed = runs?.find(");
+  add('        (r' + (TS ? ": { status: string; conclusion: string; created_at: string }" : "") + ') => r.status === "completed" && r.conclusion === "failure" &&');
+  add("          Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,");
+  add("      );");
+  add("      if (recentFailed) {");
+  add("        return NextResponse.json" + SG + "({");
+  add('          step: "error", completed: true, error: "Workflow failed — check GitHub Actions for details",');
+  add("        });");
+  add("      }");
+  add("    }");
+  add("");
+  add("    return NextResponse.json" + SG + "({ step: \"working\", completed: false });");
+  add("  } catch {");
+  add("    return NextResponse.json" + SG + "(");
+  add('      { step: "error", completed: true, error: "Status check failed" }, { status: 500 },');
+  add("    );");
+  add("  }");
+  add("}");
 
   return {
     filename: `route.${ext}`,
-    content: `import { NextRequest, NextResponse } from "next/server";
-${typeImports}
-export async function POST(request${isTypeScript ? ": NextRequest" : ""}) {
-  try {
-    const body${reqType} = await request.json();
-
-    if (!body.prompt?.trim()) {
-      return NextResponse.json${resGeneric}(
-        { requestId: "", branch: "", status: "error", error: "Prompt is required" },
-        { status: 400 }
-      );
-    }
-
-    // Auth check
-    const secret = process.env.ANTEATER_SECRET;
-    if (secret) {
-      const authHeader = request.headers.get("x-anteater-secret");
-      if (authHeader !== secret) {
-        return NextResponse.json${resGeneric}(
-          { requestId: "", branch: "", status: "error", error: "Unauthorized" },
-          { status: 401 }
-        );
-      }
-    }
-
-    const repo = process.env.ANTEATER_GITHUB_REPO;
-    const token = process.env.GITHUB_TOKEN;
-
-    if (!repo || !token) {
-      return NextResponse.json${resGeneric}(
-        { requestId: "", branch: "", status: "error", error: "Server misconfigured" },
-        { status: 500 }
-      );
-    }
-
-    const requestId = crypto.randomUUID().slice(0, 8);
-    const branch =
-      body.mode === "copy"
-        ? \`anteater/friend-\${requestId}\`
-        : \`anteater/run-\${requestId}\`;
-
-    const dispatchRes = await fetch(
-      \`https://api.github.com/repos/\${repo}/actions/workflows/anteater.yml/dispatches\`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: \`Bearer \${token}\`,
-          Accept: "application/vnd.github+json",
-          "X-GitHub-Api-Version": "2022-11-28",
-        },
-        body: JSON.stringify({
-          ref: "${productionBranch}",
-          inputs: {
-            requestId,
-            prompt: body.prompt,
-            mode: body.mode || "prod",
-            branch,
-            baseBranch: "${productionBranch}",
-            autoMerge: String(body.mode !== "copy"),
-          },
-        }),
-      }
-    );
-
-    if (!dispatchRes.ok) {
-      const err = await dispatchRes.text();
-      return NextResponse.json${resGeneric}(
-        { requestId, branch, status: "error", error: \`GitHub dispatch failed: \${dispatchRes.status}\` },
-        { status: 502 }
-      );
-    }
-
-    return NextResponse.json${resGeneric}({ requestId, branch, status: "queued" });
-  } catch {
-    return NextResponse.json${resGeneric}(
-      { requestId: "", branch: "", status: "error", error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-}
-
-/**
- * GET /api/anteater?branch=anteater/run-xxx
- * Polls real pipeline status by checking branch → PR → merge state on GitHub.
- */
-export async function GET(request${isTypeScript ? ": NextRequest" : ""}) {
-  const branch = new URL(request.url).searchParams.get("branch");
-  if (!branch) {
-    return NextResponse.json${statusGeneric}(
-      { step: "error", completed: true, error: "Missing branch param" }, { status: 400 },
-    );
-  }
-
-  const repo = process.env.ANTEATER_GITHUB_REPO;
-  const token = process.env.GITHUB_TOKEN;
-  if (!repo || !token) {
-    return NextResponse.json${statusGeneric}(
-      { step: "error", completed: true, error: "Server misconfigured" }, { status: 500 },
-    );
-  }
-
-  const gh = (url) =>
-    fetch(url, {
-      headers: {
-        Authorization: \\\`Bearer \\\${token}\\\`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      cache: "no-store",
-    });
-
-  try {
-    // Check if branch exists (agent pushes it when done)
-    const branchRes = await gh(
-      \\\`https://api.github.com/repos/\\\${repo}/git/refs/heads/\\\${branch}\\\`,
-    );
-
-    if (!branchRes.ok) {
-      // Branch doesn't exist yet — check for workflow failure
-      const runsRes = await gh(
-        \\\`https://api.github.com/repos/\\\${repo}/actions/workflows/anteater.yml/runs?per_page=5\\\`,
-      );
-      if (runsRes.ok) {
-        const { workflow_runs: runs } = await runsRes.json();
-        const recentFailed = runs?.find(
-          (r) => r.status === "completed" && r.conclusion === "failure" &&
-            Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
-        );
-        if (recentFailed) {
-          return NextResponse.json${statusGeneric}({
-            step: "error", completed: true, error: "Workflow failed — check GitHub Actions",
-          });
-        }
-      }
-      return NextResponse.json${statusGeneric}({ step: "working", completed: false });
-    }
-
-    // Branch exists — check for PR
-    const prRes = await gh(
-      \\\`https://api.github.com/repos/\\\${repo}/pulls?head=\\\${repo.split("/")[0]}:\\\${branch}&state=all&per_page=1\\\`,
-    );
-    if (!prRes.ok || !(await prRes.json()).length) {
-      return NextResponse.json${statusGeneric}({ step: "merging", completed: false });
-    }
-
-    const pr = (await gh(
-      \\\`https://api.github.com/repos/\\\${repo}/pulls?head=\\\${repo.split("/")[0]}:\\\${branch}&state=all&per_page=1\\\`,
-    ).then((r) => r.json()))[0];
-
-    if (pr.merged_at) {
-      const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
-      if (mergedAgo > 30000) {
-        return NextResponse.json${statusGeneric}({ step: "done", completed: true });
-      }
-      return NextResponse.json${statusGeneric}({ step: "redeploying", completed: false });
-    }
-
-    if (pr.state === "closed") {
-      return NextResponse.json${statusGeneric}({
-        step: "error", completed: true, error: "PR was closed without merging",
-      });
-    }
-
-    return NextResponse.json${statusGeneric}({ step: "merging", completed: false });
-  } catch {
-    return NextResponse.json${statusGeneric}(
-      { step: "error", completed: true, error: "Status check failed" }, { status: 500 },
-    );
-  }
-}
-`,
+    content: lines.join("\n") + "\n",
   };
 }
 
