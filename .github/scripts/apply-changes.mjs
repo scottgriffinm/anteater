@@ -244,7 +244,16 @@ async function main() {
   console.log("Done!");
 }
 
-main().catch((err) => {
-  console.error("Anteater agent failed:", err);
-  process.exit(1);
-});
+export { collectFiles, readFiles, callClaude, writeFiles, main };
+
+// Only auto-run when executed directly (not imported by tests)
+const isDirectRun =
+  import.meta.url === `file://${process.argv[1]}` ||
+  import.meta.url === new URL(process.argv[1] || "", "file://").href;
+
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error("Anteater agent failed:", err);
+    process.exit(1);
+  });
+}
