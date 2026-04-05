@@ -85,7 +85,8 @@ export async function GET(request: NextRequest) {
 
                 if (latest) {
                   const deployCreated = new Date(latest.created).getTime();
-                  const isPostMerge = deployCreated >= mergedAt - 5000; // 5s tolerance
+                  // Deployment must have been created AFTER the PR merge to be the right one
+                  const isPostMerge = deployCreated > mergedAt;
                   const isReady = latest.readyState === "READY" || latest.state === "READY";
 
                   log("info", "GET /api/anteater — Vercel deployment check", {
@@ -98,7 +99,8 @@ export async function GET(request: NextRequest) {
                     return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
                   }
 
-                  // Deployment exists but still building
+                  // Either still waiting for Vercel to start building,
+                  // or the build is in progress
                   return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
                 }
               }
