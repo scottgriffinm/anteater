@@ -60,11 +60,58 @@ export async function GET(request: NextRequest) {
       if (prs.length) {
         const pr = prs[0];
 
-        // PR merged → redeploying or done
+        // PR merged → check if Vercel has deployed the new code
         if (pr.merged_at) {
-          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
+          const mergedAt = new Date(pr.merged_at).getTime();
+          const mergedAgo = Date.now() - mergedAt;
+
+          // Check Vercel deployment status if token is available
+          const vercelToken = process.env.VERCEL_TOKEN;
+          const vercelProjectId = process.env.VERCEL_PROJECT_ID;
+
+          if (vercelToken && vercelProjectId) {
+            try {
+              const vercelRes = await fetch(
+                `https://api.vercel.com/v6/deployments?projectId=${vercelProjectId}&limit=1&target=production`,
+                {
+                  headers: { Authorization: `Bearer ${vercelToken}` },
+                  cache: "no-store",
+                },
+              );
+
+              if (vercelRes.ok) {
+                const { deployments } = await vercelRes.json();
+                const latest = deployments?.[0];
+
+                if (latest) {
+                  const deployCreated = new Date(latest.created).getTime();
+                  const isPostMerge = deployCreated >= mergedAt - 5000; // 5s tolerance
+                  const isReady = latest.readyState === "READY" || latest.state === "READY";
+
+                  log("info", "GET /api/anteater — Vercel deployment check", {
+                    branch, prNumber: pr.number, mergedAgo,
+                    deployState: latest.readyState || latest.state,
+                    deployCreated: latest.created, isPostMerge, isReady,
+                  });
+
+                  if (isPostMerge && isReady) {
+                    return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
+                  }
+
+                  // Deployment exists but still building
+                  return NextResponse.json<AnteaterStatusResponse>({ step: "redeploying", completed: false });
+                }
+              }
+            } catch (vercelErr) {
+              log("warn", "GET /api/anteater — Vercel API check failed, falling back to timer", {
+                error: String(vercelErr),
+              });
+            }
+          }
+
+          // Fallback: no Vercel token configured, use conservative timer
           const step = mergedAgo > 150_000 ? "done" : "redeploying";
-          log("info", "GET /api/anteater — PR merged", { branch, prNumber: pr.number, mergedAgo, step });
+          log("info", "GET /api/anteater — PR merged (timer fallback)", { branch, prNumber: pr.number, mergedAgo, step });
           if (step === "done") {
             return NextResponse.json<AnteaterStatusResponse>({ step: "done", completed: true });
           }
