@@ -3,7 +3,7 @@ export function Hero() {
     <section className="flex flex-col items-center justify-center px-6 pt-32 pb-20 text-center">
       <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-4 py-1.5 text-sm text-muted">
         <span className="inline-block h-2 w-2 rounded-full bg-accent animate-pulse" />
-        Open source &middot; MIT licensed
+        Now in public beta
       </div>
 
       <h1 className="max-w-3xl text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.08]">
