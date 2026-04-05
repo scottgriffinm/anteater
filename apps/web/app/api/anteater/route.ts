@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
           const mergedAgo = Date.now() - mergedAt;
 
           // Check Vercel deployment status if token is available
-          const vercelToken = process.env.VERCEL_TOKEN;
+          const vercelToken = process.env.ANTEATER_VERCEL_TOKEN;
           const vercelProjectId = process.env.VERCEL_PROJECT_ID;
 
           if (vercelToken && vercelProjectId) {
