@@ -15,7 +15,6 @@ const {
   generateConfig,
   generateApiRoute,
   generateWorkflow,
-  generateApplyScript,
   patchLayout,
   scaffoldFiles,
 } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
@@ -108,10 +107,10 @@ describe("generateWorkflow", () => {
       blockedGlobs: [".env*"],
       productionBranch: "main",
     });
-    expect(result).toContain("--allowed-paths");
     expect(result).toContain("src/**");
-    expect(result).toContain("--blocked-paths");
     expect(result).toContain(".env*");
+    expect(result).toContain("Only edit files under");
+    expect(result).toContain("NEVER edit");
   });
 
   it("includes auto-merge step", () => {
@@ -126,26 +125,36 @@ describe("generateWorkflow", () => {
   });
 });
 
-describe("generateApplyScript", () => {
-  it("generates script with correct AI model", () => {
-    const result = generateApplyScript();
-    expect(result).toContain("claude-sonnet-4-20250514");
+describe("generateWorkflow — claude-code-action", () => {
+  it("uses anthropics/claude-code-action@v1", () => {
+    const result = generateWorkflow({
+      allowedGlobs: ["app/**"],
+      blockedGlobs: [".env*"],
+      productionBranch: "main",
+    });
+    expect(result).toContain("anthropics/claude-code-action@v1");
   });
 
-  it("includes max_tokens limit", () => {
-    const result = generateApplyScript();
-    expect(result).toContain("max_tokens: 16384");
+  it("includes build verification instruction in prompt", () => {
+    const result = generateWorkflow({
+      allowedGlobs: ["app/**"],
+      blockedGlobs: [".env*"],
+      productionBranch: "main",
+    });
+    expect(result).toContain("run the build command");
+    expect(result).toContain("fix the issues");
   });
 
-  it("includes truncation guard", () => {
-    const result = generateApplyScript();
-    expect(result).toContain("max_tokens exceeded");
-  });
-
-  it("includes path validation with basename fallback", () => {
-    const result = generateApplyScript();
-    expect(result).toContain("basename");
-    expect(result).toContain("Corrected:");
+  it("installs dependencies before agent step", () => {
+    const result = generateWorkflow({
+      allowedGlobs: ["app/**"],
+      blockedGlobs: [".env*"],
+      productionBranch: "main",
+    });
+    const installIdx = result.indexOf("pnpm install");
+    const agentIdx = result.indexOf("claude-code-action");
+    expect(installIdx).toBeGreaterThan(-1);
+    expect(agentIdx).toBeGreaterThan(installIdx);
   });
 });
 
@@ -204,11 +213,10 @@ describe("scaffoldFiles", () => {
       layoutFile: null, // skip layout patching for this test
     });
 
-    expect(results.length).toBeGreaterThanOrEqual(4);
+    expect(results.length).toBeGreaterThanOrEqual(3);
     expect(results).toContain("anteater.config.ts");
     expect(results.some((f) => f.includes("route.ts"))).toBe(true);
     expect(results.some((f) => f.includes("anteater.yml"))).toBe(true);
-    expect(results.some((f) => f.includes("apply-changes.mjs"))).toBe(true);
   });
 
   it("skips files that already exist", async () => {

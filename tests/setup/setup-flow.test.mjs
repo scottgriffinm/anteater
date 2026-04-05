@@ -49,7 +49,7 @@ vi.mock("../../packages/setup-anteater/lib/detect.mjs", () => ({
 vi.mock("../../packages/setup-anteater/lib/scaffold.mjs", () => ({
   scaffoldFiles: vi.fn(async () => [
     "anteater.config.ts", "app/api/anteater/route.ts",
-    ".github/workflows/anteater.yml", ".github/scripts/apply-changes.mjs",
+    ".github/workflows/anteater.yml",
     "app/layout.tsx (patched)",
   ]),
 }));
