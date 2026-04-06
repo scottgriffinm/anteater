@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AnteaterBarWrapper } from "@/components/anteater-bar-wrapper";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -31,7 +30,6 @@ export default function RootLayout({
     >
       <body className="min-h-screen flex flex-col">
           {children}
-          <AnteaterBarWrapper />
         </body>
     </html>
   );
