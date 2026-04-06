@@ -217,7 +217,7 @@ export function AnteaterBar({
         }}
       >
         {/* Input row + circle button */}
-        <div style={{ display: "flex", alignItems: "flex-end", position: "relative" }}>
+        <div style={{ position: "relative" }}>
           {/* Combined input + status panel, tucks behind the circle */}
           <form
             onSubmit={handleSubmit}
@@ -225,7 +225,7 @@ export function AnteaterBar({
               overflow: "hidden",
               width: isExpanded ? "min(360px, calc(100vw - 100px))" : "0px",
               opacity: isExpanded ? 1 : 0,
-              marginRight: `${-BUTTON_SIZE / 2}px`,
+              marginRight: `${BUTTON_SIZE / 2}px`,
               transition: "width 0.3s ease, opacity 0.2s ease",
             }}
           >
@@ -268,7 +268,9 @@ export function AnteaterBar({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  padding: `8px ${BUTTON_SIZE / 2 + 12}px 8px 16px`,
+                  padding: "8px 16px",
+                  height: `${BUTTON_SIZE}px`,
+                  boxSizing: "border-box",
                 }}
               >
                 <input
@@ -308,12 +310,14 @@ export function AnteaterBar({
             </div>
           </form>
 
-          {/* Anteater circle button — sits on top of input's right edge */}
+          {/* Anteater circle button — absolutely positioned, vertically centered with input row */}
           <button
             type="button"
             onClick={handleButtonClick}
             style={{
-              position: "relative",
+              position: "absolute",
+              right: 0,
+              bottom: 0,
               zIndex: 1,
               width: `${BUTTON_SIZE}px`,
               height: `${BUTTON_SIZE}px`,
