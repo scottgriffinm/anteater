@@ -171,7 +171,7 @@ export function AnteaterBar({
       >
         <div style={{ position: "relative" }}>
           {/* Runs list panel — sits behind the input bar */}
-          {isExpanded && (hasRuns || error) && (
+          {isExpanded && (
             <div
               style={{
                 position: "absolute",
@@ -189,6 +189,17 @@ export function AnteaterBar({
               }}
             >
               {hasRuns && <RunsList runs={runs} />}
+              {!hasRuns && !error && (
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    fontSize: "13px",
+                    color: "#555",
+                  }}
+                >
+                  No active changes
+                </div>
+              )}
               {error && (
                 <div
                   style={{
