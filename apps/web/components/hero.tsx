@@ -18,7 +18,7 @@ export function Hero() {
       </svg>
 
       <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-6">
-        Let users make your app
+        Let users make your app.
       </h1>
 
       <div className="inline-flex items-center gap-3 rounded-lg border border-border bg-surface px-6 py-3 font-mono text-sm mb-8">
