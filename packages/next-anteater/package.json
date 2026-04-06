@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "AI-powered live editing for your Next.js app",
   "bin": {
-    "anteater": "./bin/setup-anteater.mjs"
+    "anteater": "./bin/setup-anteater.mjs",
+    "anteater-uninstall": "./bin/uninstall-anteater.mjs",
+    "next-anteater": "./bin/cli.mjs"
   },
   "type": "module",
   "files": ["bin/", "lib/"],
