@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Anteater - Let users make your app",
+  title: "Anteater - Let users make your app.",
   description:
     "Describe changes in plain English. Anteater applies them to your live site via GitHub Actions and Vercel.",
 };
