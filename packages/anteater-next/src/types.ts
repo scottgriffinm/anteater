@@ -49,6 +49,21 @@ export interface AnteaterStatusResponse {
   deploymentId?: string;
 }
 
+/** A single active run in the multi-run list */
+export interface AnteaterRun {
+  branch: string;
+  requestId: string;
+  prompt: string;
+  step: AnteaterStatusResponse["step"];
+  mode: "prod" | "copy";
+}
+
+/** Response from GET /api/anteater/runs */
+export interface AnteaterRunsResponse {
+  runs: AnteaterRun[];
+  deploymentId?: string;
+}
+
 export interface AnteaterBarProps {
   /** API endpoint to submit prompts to */
   apiEndpoint?: string;

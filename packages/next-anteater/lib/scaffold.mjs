@@ -433,6 +433,95 @@ jobs:
 }
 
 /**
+ * Generate the /api/anteater/runs route handler for multi-run discovery.
+ */
+export function generateRunsRoute({ isTypeScript }) {
+  const ext = isTypeScript ? "ts" : "js";
+  const TS = isTypeScript;
+  const lines = [];
+  const add = (s) => lines.push(s);
+
+  add('import { NextResponse } from "next/server";');
+  if (TS) add('import type { AnteaterRun, AnteaterRunsResponse } from "@anteater/next";');
+  add("");
+  add("function getRepo()" + (TS ? ": string | undefined" : "") + " {");
+  add("  if (process.env.ANTEATER_GITHUB_REPO) return process.env.ANTEATER_GITHUB_REPO;");
+  add("  const owner = process.env.VERCEL_GIT_REPO_OWNER;");
+  add("  const slug = process.env.VERCEL_GIT_REPO_SLUG;");
+  add("  if (owner && slug) return `${owner}/${slug}`;");
+  add("  return undefined;");
+  add("}");
+  add("");
+  add("export async function GET() {");
+  add("  const repo = getRepo();");
+  add("  const token = process.env.GITHUB_TOKEN;");
+  add("  if (!repo || !token) {");
+  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("  }");
+  add("");
+  add("  const gh = (url" + (TS ? ": string" : "") + ") =>");
+  add("    fetch(url, {");
+  add("      headers: {");
+  add("        Authorization: `Bearer ${token}`,");
+  add('        Accept: "application/vnd.github+json",');
+  add('        "X-GitHub-Api-Version": "2022-11-28",');
+  add("      },");
+  add('      cache: "no-store",');
+  add("    });");
+  add("");
+  add("  try {");
+  add("    const owner = repo.split(\"/\")[0];");
+  add("    const refsRes = await gh(`https://api.github.com/repos/${repo}/git/matching-refs/heads/anteater/`);");
+  add("    const refs" + (TS ? ": Array<{ ref: string }>" : "") + " = refsRes.ok ? await refsRes.json() : [];");
+  add("");
+  add("    const prsRes = await gh(`https://api.github.com/repos/${repo}/pulls?state=all&per_page=20&sort=created&direction=desc`);");
+  add("    const allPrs" + (TS ? ": any[]" : "") + " = prsRes.ok ? await prsRes.json() : [];");
+  add("    const anteaterPrs = allPrs.filter((pr" + (TS ? ": any" : "") + ") => pr.head.ref.startsWith(\"anteater/\"));");
+  add("    const prByBranch = new Map(anteaterPrs.map((pr" + (TS ? ": any" : "") + ") => [pr.head.ref, pr]));");
+  add("");
+  add("    const runs" + (TS ? ": AnteaterRun[]" : "") + " = [];");
+  add("    const branchNames = refs.map((r) => r.ref.replace(\"refs/heads/\", \"\"));");
+  add("    for (const pr of anteaterPrs) {");
+  add("      if (!branchNames.includes(pr.head.ref)) branchNames.push(pr.head.ref);");
+  add("    }");
+  add("");
+  add("    for (const branch of branchNames) {");
+  add("      const pr = prByBranch.get(branch);");
+  add("      const parts = branch.split(\"-\");");
+  add("      const requestId = parts[parts.length - 1] || \"\";");
+  add("      const mode = branch.includes(\"friend-\") ? \"copy\" : \"prod\";");
+  add("      let step" + (TS ? ": string" : "") + ";");
+  add("");
+  add("      if (pr?.merged_at) {");
+  add("        const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
+  add("        if (mergedAgo > 300000) continue;");
+  add("        step = mergedAgo > 150000 ? \"done\" : \"redeploying\";");
+  add("      } else if (pr?.state === \"closed\") {");
+  add("        continue;");
+  add("      } else if (pr) {");
+  add("        step = \"merging\";");
+  add("      } else {");
+  add("        step = \"working\";");
+  add("      }");
+  add("");
+  add("      const prompt = pr?.title?.replace(/^anteater:\\\\s*/i, \"\") || \"Starting...\";");
+  add("      runs.push({ branch, requestId, prompt, step, mode });");
+  add("      if (runs.length >= 5) break;");
+  add("    }");
+  add("");
+  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs, deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("  } catch {");
+  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("  }");
+  add("}");
+
+  return {
+    filename: `route.${ext}`,
+    content: lines.join("\n") + "\n",
+  };
+}
+
+/**
  * Generate the AI apply script.
  */
 export function generateApplyScript() {
@@ -604,6 +693,14 @@ export async function scaffoldFiles(cwd, options) {
   const routePath = join(cwd, routeDir, route.filename);
   if (await writeIfNotExists(routePath, route.content)) {
     results.push(join(routeDir, route.filename));
+  }
+
+  // Runs API route (multi-run discovery)
+  const runsRoute = generateRunsRoute(options);
+  const runsDir = options.isAppRouter ? "app/api/anteater/runs" : "pages/api/anteater/runs";
+  const runsPath = join(cwd, runsDir, runsRoute.filename);
+  if (await writeIfNotExists(runsPath, runsRoute.content)) {
+    results.push(join(runsDir, runsRoute.filename));
   }
 
   // GitHub Action workflow
