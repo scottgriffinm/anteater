@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Shared state that mock factories read from — survives vi.resetModules()
+// Shared state that mock factories read from
 const state = {
   hasGh: true,
   hasVercel: true,
@@ -30,7 +30,10 @@ vi.mock("../../packages/setup-anteater/lib/ui.mjs", () => {
       return "sk-ant-test-key-123";
     }),
     confirm: vi.fn(async () => true),
-    select: vi.fn(async (q, opts) => opts[0].value),
+    select: vi.fn(async (q, opts) => {
+      // Return first option (default) for all select prompts
+      return opts[0].value;
+    }),
     spinner: vi.fn(async (msg, fn) => fn()),
   };
 });
@@ -50,6 +53,7 @@ vi.mock("../../packages/setup-anteater/lib/scaffold.mjs", () => ({
   scaffoldFiles: vi.fn(async () => [
     "anteater.config.ts", "app/api/anteater/route.ts",
     ".github/workflows/anteater.yml",
+    ".claude/settings.local.json",
     "app/layout.tsx (patched)",
   ]),
 }));
@@ -66,6 +70,11 @@ vi.mock("../../packages/setup-anteater/lib/secrets.mjs", () => ({
   setVercelEnv: vi.fn(() => true),
   writeEnvLocal: vi.fn(async () => {}),
 }));
+
+// Import main() at top level — after all vi.mock() calls are hoisted.
+// This avoids the vi.resetModules() + dynamic import pattern that causes
+// vitest's vm.Script to choke on the shebang line.
+const { main } = await import("../../packages/setup-anteater/lib/setup.mjs");
 
 let originalFetch;
 let mockExit;
@@ -102,36 +111,64 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function runSetup() {
-  vi.resetModules();
-  const mod = await import("../../packages/setup-anteater/bin/setup-anteater.mjs");
-  // Call main() directly — the module no longer auto-runs it when imported
-  return mod.main();
-}
-
 describe("setup flow", () => {
   it("happy path completes without error", async () => {
-    await expect(runSetup()).resolves.toBeUndefined();
+    await expect(main()).resolves.toBeUndefined();
   });
 
   it("exits when gh CLI is missing", async () => {
     state.hasGh = false;
-    await expect(runSetup()).rejects.toThrow("process.exit(1)");
+    await expect(main()).rejects.toThrow("process.exit(1)");
   });
 
   it("exits when vercel CLI is missing", async () => {
     state.hasVercel = false;
-    await expect(runSetup()).rejects.toThrow("process.exit(1)");
+    await expect(main()).rejects.toThrow("process.exit(1)");
   });
 
   it("exits for non-Next.js project", async () => {
     state.isNextJs = false;
-    await expect(runSetup()).rejects.toThrow("process.exit(1)");
+    await expect(main()).rejects.toThrow("process.exit(1)");
   });
 
   it("prompts for PAT when gh auth token returns OAuth token", async () => {
     state.ghToken = "gho_short_lived_oauth_token";
     // ask() mock returns "ghp_durable_pat_token" when prompted for PAT
-    await expect(runSetup()).resolves.toBeUndefined();
+    await expect(main()).resolves.toBeUndefined();
+  });
+
+  it("passes model and permissionsMode to scaffoldFiles", async () => {
+    await main();
+    const { scaffoldFiles } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
+    const callArgs = scaffoldFiles.mock.calls[0][1];
+    expect(callArgs).toHaveProperty("model", "sonnet"); // default from select mock
+    expect(callArgs).toHaveProperty("permissionsMode", "sandboxed"); // default from select mock
+  });
+
+  it("falls back to sandboxed when unrestricted is declined", async () => {
+    const { select, confirm: confirmMock } = await import("../../packages/setup-anteater/lib/ui.mjs");
+
+    // Track call count to differentiate select calls
+    let selectCallCount = 0;
+    select.mockImplementation(async (q, opts) => {
+      selectCallCount++;
+      // 2nd select call is permissions mode — pick unrestricted
+      if (selectCallCount === 2) return "unrestricted";
+      return opts[0].value;
+    });
+
+    // Decline the unrestricted confirmation
+    confirmMock.mockImplementation(async (q, defaultYes) => {
+      // The unrestricted confirmation prompt defaults to false (y/N)
+      if (q && q.includes("unrestricted")) return false;
+      return true;
+    });
+
+    await main();
+
+    const { scaffoldFiles } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
+    const callArgs = scaffoldFiles.mock.calls[0][1];
+    // Should fall back to sandboxed
+    expect(callArgs).toHaveProperty("permissionsMode", "sandboxed");
   });
 });

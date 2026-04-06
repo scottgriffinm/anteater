@@ -251,9 +251,53 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
 }
 
 /**
+ * Generate .claude/settings.local.json for agent permissions.
+ */
+export function generateClaudeSettings({ model, permissionsMode }) {
+  if (permissionsMode === "unrestricted") {
+    return JSON.stringify({
+      model,
+      alwaysThinkingEnabled: true,
+      skipDangerousModePermissionPrompt: true,
+      permissions: {
+        defaultMode: "bypassPermissions",
+        allow: [
+          "Bash", "Edit", "Write", "MultiEdit", "NotebookEdit",
+          "WebFetch", "WebSearch", "Skill", "mcp__*",
+        ],
+        deny: [],
+      },
+    }, null, 2) + "\n";
+  }
+
+  // Sandboxed (default)
+  return JSON.stringify({
+    model,
+    alwaysThinkingEnabled: true,
+    skipDangerousModePermissionPrompt: true,
+    permissions: {
+      defaultMode: "bypassPermissions",
+      allow: [
+        "Read", "Edit", "Write", "Glob", "Grep",
+        "Bash(git *)", "Bash(npm *)", "Bash(pnpm *)",
+        "Bash(npx *)", "Bash(node *)", "Bash(ls *)",
+        "Bash(find *)", "Bash(mkdir *)", "Bash(rm *)",
+        "Bash(cp *)", "Bash(mv *)",
+      ],
+      deny: [
+        "WebFetch", "WebSearch",
+        "Bash(curl *)", "Bash(wget *)",
+        "Bash(gh *)", "Bash(vercel *)",
+        "mcp__*",
+      ],
+    },
+  }, null, 2) + "\n";
+}
+
+/**
  * Generate the GitHub Actions workflow.
  */
-export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch }) {
+export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch, model }) {
   const allowed = allowedGlobs.join(", ");
   const blocked = blockedGlobs.join(", ");
 
@@ -333,6 +377,7 @@ jobs:
 
             IMPORTANT: Always verify your changes compile by running the build command.
           anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
+          model: "${model}"
           claude_args: "--allowedTools Edit,Read,Write,Bash,Glob,Grep --max-turns 25"
 
       - name: Check for changes
@@ -565,6 +610,14 @@ export async function scaffoldFiles(cwd, options) {
   const workflowPath = join(cwd, ".github/workflows/anteater.yml");
   if (await writeIfNotExists(workflowPath, generateWorkflow(options))) {
     results.push(".github/workflows/anteater.yml");
+  }
+
+  // Claude Code agent settings
+  if (options.model && options.permissionsMode) {
+    const settingsPath = join(cwd, ".claude/settings.local.json");
+    if (await writeIfNotExists(settingsPath, generateClaudeSettings(options))) {
+      results.push(".claude/settings.local.json");
+    }
   }
 
   // Patch layout
