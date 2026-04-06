@@ -11,3 +11,4 @@ dist/
 .vercel
 .playwright-mcp/
 .claude/
+packages/next-anteater/package-lock.json

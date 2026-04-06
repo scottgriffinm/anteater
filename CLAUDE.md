@@ -36,6 +36,46 @@ packages/
     src/             ← Same components, used by apps/web only
 ```
 
+The two packages have nearly identical `src/` directories. `next-anteater` is what gets published; `anteater-next` is consumed by `apps/web` via pnpm workspace. When updating components/hooks/types, update **both** packages to keep them in sync.
+
+## Development
+
+```bash
+pnpm install          # install all workspace deps
+pnpm dev              # turbo dev (runs apps/web)
+pnpm test             # vitest (runs tests/)
+pnpm build            # turbo build (builds all packages)
+```
+
+Build `next-anteater` components before publishing:
+```bash
+cd packages/next-anteater && npm run build
+```
+
+This compiles `src/` → `dist/`. If you skip this, users get stale or missing component exports.
+
+## Environment Variables
+
+See `.env.example` for required variables. The `.env` file at the repo root contains:
+- `NPM_TOKEN` — for publishing to npm
+- `ANTHROPIC_API_KEY` — for testing agent workflows
+- `GITHUB_PAT` — for GitHub API operations
+
+NEVER read `.env` directly. Extract values silently: `export VAR=$(grep VAR_NAME .env | cut -d= -f2-)`
+
+## Tests
+
+Tests live in `tests/` and run with vitest (`pnpm test`).
+
+- `tests/setup/` — Setup CLI tests (detect, scaffold, secrets, setup flow)
+- `tests/agent/` — Agent behavior tests
+- `tests/fixtures/` — Test fixtures
+- `tests/helpers/` — Mock helpers (fetch, shell)
+
+## CI/CD
+
+This monorepo has **no GitHub Actions workflows**. Workflows are scaffolded by the CLI onto external projects that install Anteater. The scaffolded workflow uses `anthropics/claude-code-action@v1` to run the agent.
+
 ## npm Publishing
 
 When publishing a new version of `next-anteater`, **always follow `tasks/npm-publish.md`**. It has the exact steps, pre-flight checks, and known gotchas.
