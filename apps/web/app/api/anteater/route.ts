@@ -65,12 +65,9 @@ export async function GET(request: NextRequest) {
         const pr = prs[0];
 
         if (pr.merged_at) {
-          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
-          // Client detects deploy via deployment ID change.
-          // Use 150s timer as final fallback for non-Vercel environments.
-          const step = mergedAgo > 150_000 ? "done" : "redeploying";
-          log("info", "GET /api/anteater — PR merged", { branch, prNumber: pr.number, mergedAgo, step });
-          return status({ step, completed: step === "done" });
+          // PR merged — redeploying. Client detects new deploymentId to confirm done.
+          log("info", "GET /api/anteater — PR merged", { branch, prNumber: pr.number });
+          return status({ step: "redeploying", completed: false });
         }
 
         if (pr.state === "closed") {
@@ -92,21 +89,18 @@ export async function GET(request: NextRequest) {
       return status({ step: "merging", completed: false });
     }
 
-    // No branch, no PR — check for workflow failures
+    // No branch, no PR — check workflow run status for this branch
     const runsRes = await gh(
-      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?branch=${encodeURIComponent(branch)}&per_page=1`,
     );
     if (runsRes.ok) {
       const { workflow_runs: runs } = await runsRes.json();
-      const recentFailed = runs?.find(
-        (r: { status: string; conclusion: string; created_at: string }) =>
-          r.status === "completed" &&
-          r.conclusion === "failure" &&
-          Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,
-      );
-      if (recentFailed) {
-        log("error", "GET /api/anteater — workflow failed", { branch, runId: recentFailed.id });
-        return status({ step: "error", completed: true, error: "Workflow failed — check GitHub Actions for details" });
+      if (runs?.length) {
+        const run = runs[0] as { status: string; conclusion: string | null; id: number };
+        if (run.status === "completed" && run.conclusion === "failure") {
+          log("error", "GET /api/anteater — workflow failed", { branch, runId: run.id });
+          return status({ step: "error", completed: true, error: "Workflow failed — check GitHub Actions for details" });
+        }
       }
     }
 

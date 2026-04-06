@@ -92,19 +92,11 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
 
       // Detect new deployment: if deployment ID changed, new code is live
       if (
-        data.step === "redeploying" &&
         data.deploymentId &&
         initialDeploymentIdRef.current &&
         data.deploymentId !== initialDeploymentIdRef.current
       ) {
         console.log(`[anteater] New deployment detected: ${initialDeploymentIdRef.current} → ${data.deploymentId}`);
-        triggerReload();
-        return;
-      }
-
-      // Server-side "done" fallback (150s timer for non-Vercel environments)
-      if (data.step === "done") {
-        console.log(`[anteater] Pipeline complete (server fallback)`);
         triggerReload();
         return;
       }

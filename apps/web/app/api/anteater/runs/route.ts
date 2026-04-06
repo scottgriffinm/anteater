@@ -12,8 +12,20 @@ function getRepo(): string | undefined {
 /**
  * GET /api/anteater/runs
  *
- * Discovers all active anteater runs by listing anteater/* branches
- * and cross-referencing with PRs. Returns up to 5 active runs.
+ * Uses GitHub workflow runs as the source of truth — no timers.
+ *
+ * Statuses derived from actual GitHub state:
+ *   - workflow in_progress, no PR          → "working"
+ *   - workflow in_progress, PR open        → "merging"
+ *   - workflow completed+success, PR open  → "merging"
+ *   - workflow completed+success, PR merged, same deploymentId → "redeploying"
+ *   - workflow completed+failure           → "error"
+ *   - deploymentId changed (client-side)   → page reloads
+ *
+ * A run disappears from the list when:
+ *   - workflow failed (shown briefly as error, then gone on next completed-only fetch)
+ *   - PR merged + client detects new deploymentId → page reloads
+ *   - PR closed without merge
  */
 export async function GET() {
   const repo = getRepo();
@@ -36,15 +48,34 @@ export async function GET() {
     });
 
   try {
-    const owner = repo.split("/")[0];
-
-    // 1. List all anteater/* branches (single API call)
-    const refsRes = await gh(
-      `https://api.github.com/repos/${repo}/git/matching-refs/heads/anteater/`,
+    // 1. Fetch in-progress workflow runs (the real active runs)
+    const inProgressRes = await gh(
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?status=in_progress&per_page=5`,
     );
-    const refs: Array<{ ref: string }> = refsRes.ok ? await refsRes.json() : [];
+    const inProgressRuns: Array<{
+      id: number;
+      head_branch: string;
+      status: string;
+      conclusion: string | null;
+    }> = inProgressRes.ok
+      ? (await inProgressRes.json()).workflow_runs ?? []
+      : [];
 
-    // 2. Fetch recent PRs with anteater head branches (single API call)
+    // 2. Fetch recently completed workflow runs (to catch merging/redeploying)
+    const completedRes = await gh(
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?status=completed&per_page=5`,
+    );
+    const completedRuns: Array<{
+      id: number;
+      head_branch: string;
+      status: string;
+      conclusion: string | null;
+      updated_at: string;
+    }> = completedRes.ok
+      ? (await completedRes.json()).workflow_runs ?? []
+      : [];
+
+    // 3. Fetch PRs for all anteater branches to get prompt + merge state
     const prsRes = await gh(
       `https://api.github.com/repos/${repo}/pulls?state=all&per_page=20&sort=created&direction=desc`,
     );
@@ -53,63 +84,68 @@ export async function GET() {
       title: string;
       state: string;
       merged_at: string | null;
-      created_at: string;
-      number: number;
     }> = prsRes.ok ? await prsRes.json() : [];
 
-    const anteaterPrs = allPrs.filter((pr) => pr.head.ref.startsWith("anteater/"));
-    const prByBranch = new Map(anteaterPrs.map((pr) => [pr.head.ref, pr]));
-
-    // 3. Fetch recent workflow runs to identify actively running branches (1 API call)
-    const wfRes = await gh(
-      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=10&status=in_progress`,
+    const prByBranch = new Map(
+      allPrs
+        .filter((pr) => pr.head.ref.startsWith("anteater/"))
+        .map((pr) => [pr.head.ref, pr]),
     );
-    const activeWorkflows: Array<{ head_branch: string }> = wfRes.ok
-      ? (await wfRes.json()).workflow_runs ?? []
-      : [];
-    const activeBranches = new Set(activeWorkflows.map((w) => w.head_branch));
 
-    // 4. Build runs list
     const runs: AnteaterRun[] = [];
-    const branchNames = refs.map((r) => r.ref.replace("refs/heads/", ""));
+    const seen = new Set<string>();
 
-    // Also include branches we only know about via PRs (branch may be deleted after merge)
-    for (const pr of anteaterPrs) {
-      if (!branchNames.includes(pr.head.ref)) {
-        branchNames.push(pr.head.ref);
-      }
-    }
+    // Process in-progress workflows first (these are definitively active)
+    for (const wf of inProgressRuns) {
+      const branch = wf.head_branch;
+      if (seen.has(branch)) continue;
+      seen.add(branch);
 
-    for (const branch of branchNames) {
       const pr = prByBranch.get(branch);
       const parts = branch.split("-");
       const requestId = parts[parts.length - 1] || "";
       const mode = branch.includes("friend-") ? "copy" as const : "prod" as const;
-
-      let step: AnteaterRun["step"];
-
-      if (pr?.merged_at) {
-        const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();
-        if (mergedAgo > 300_000) continue; // merged > 5 min ago, stale
-        step = mergedAgo > 150_000 ? "done" : "redeploying";
-      } else if (pr?.state === "closed") {
-        continue; // closed without merge, skip
-      } else if (pr) {
-        // Open PR — but if it's been open > 30 min, it's probably stuck
-        const prAge = Date.now() - new Date(pr.created_at).getTime();
-        if (prAge > 30 * 60 * 1000) continue;
-        step = "merging";
-      } else {
-        // Branch with no PR — only show if there's an actively running workflow for it
-        if (!activeBranches.has(branch)) continue;
-        step = "working";
-      }
-
       const prompt = pr?.title?.replace(/^anteater:\s*/i, "") || "Starting...";
 
-      runs.push({ branch, requestId, prompt, step, mode });
+      // Workflow is running — check if PR exists yet
+      const step = pr ? "merging" : "working";
 
+      runs.push({ branch, requestId, prompt, step, mode });
       if (runs.length >= 5) break;
+    }
+
+    // Process recently completed successful workflows (may be in merging/redeploying)
+    for (const wf of completedRuns) {
+      if (runs.length >= 5) break;
+      const branch = wf.head_branch;
+      if (seen.has(branch)) continue;
+      if (!branch.startsWith("anteater/")) continue;
+      seen.add(branch);
+
+      if (wf.conclusion !== "success") continue; // failed runs — skip
+
+      const pr = prByBranch.get(branch);
+      if (!pr) continue; // no PR = nothing to show
+
+      // PR state determines what's happening
+      if (pr.merged_at) {
+        // Merged — currently redeploying (client will detect new deploymentId and reload)
+        const parts = branch.split("-");
+        const requestId = parts[parts.length - 1] || "";
+        const mode = branch.includes("friend-") ? "copy" as const : "prod" as const;
+        const prompt = pr.title?.replace(/^anteater:\s*/i, "") || "";
+
+        runs.push({ branch, requestId, prompt, step: "redeploying", mode });
+      } else if (pr.state === "open") {
+        // Workflow done, PR still open — waiting for auto-merge
+        const parts = branch.split("-");
+        const requestId = parts[parts.length - 1] || "";
+        const mode = branch.includes("friend-") ? "copy" as const : "prod" as const;
+        const prompt = pr.title?.replace(/^anteater:\s*/i, "") || "";
+
+        runs.push({ branch, requestId, prompt, step: "merging", mode });
+      }
+      // closed without merge — skip
     }
 
     return NextResponse.json<AnteaterRunsResponse>({
