@@ -224,8 +224,8 @@ export function AnteaterBar({
               style={{
                 position: "absolute",
                 bottom: 0,
-                right: `${BUTTON_SIZE / 2}px`,
-                left: "16px",
+                right: `${BUTTON_SIZE}px`,
+                left: "32px",
                 zIndex: 0,
                 background: "#111",
                 border: "1px solid #333",
