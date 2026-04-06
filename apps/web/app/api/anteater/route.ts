@@ -160,9 +160,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Enforce 5-run limit by checking active anteater branches
-    const refsRes = await fetch(
-      `https://api.github.com/repos/${repo}/git/matching-refs/heads/anteater/`,
+    // Enforce 5-run limit by counting actively running workflows (not stale branches)
+    const wfRes = await fetch(
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?status=in_progress&per_page=5`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -172,10 +172,10 @@ export async function POST(request: NextRequest) {
         cache: "no-store",
       },
     );
-    if (refsRes.ok) {
-      const refs = await refsRes.json();
-      if (Array.isArray(refs) && refs.length >= 5) {
-        log("warn", "POST /api/anteater — 5 run limit reached", { activeRuns: refs.length });
+    if (wfRes.ok) {
+      const { total_count } = await wfRes.json();
+      if (total_count >= 5) {
+        log("warn", "POST /api/anteater — 5 run limit reached", { activeRuns: total_count });
         return NextResponse.json<AnteaterResponse>(
           { requestId: "", branch: "", status: "error", error: "Maximum 5 concurrent runs — wait for one to finish" },
           { status: 429 },
