@@ -26,6 +26,13 @@ export async function main() {
   console.log(`  ${"\u2500".repeat(17)}`);
   blank();
 
+  // ─── Security notice ───────────────────────────────────────
+  warn("SECURITY: Anteater lets users modify your app's code via AI.");
+  info("Only expose it to trusted users in a sandboxed environment.");
+  info("Users can make destructive changes and potentially access sensitive data.");
+  info(`Learn more: ${cyan("https://github.com/scottgriffinm/anteater#security-warning")}`);
+  blank();
+
   // ─── Preflight checks ──────────────────────────────────────
   heading("Preflight");
 
@@ -320,5 +327,10 @@ export async function main() {
   blank();
   info(`Deploy your app and look for the "${green("Edit this page")}" button.`);
   info("Users can modify your app by typing changes in the Anteater bar.");
+  blank();
+  warn("Reminder: only expose Anteater to trusted users.");
+  info("Users with access to the prompt bar can make arbitrary code changes.");
+  info("Use a sandboxed environment without real credentials or production data.");
+  info(`Protect the prompt bar behind your own auth layer \u2014 Anteater does ${bold("not")} provide auth.`);
   blank();
 }
