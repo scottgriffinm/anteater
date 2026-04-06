@@ -90,11 +90,11 @@ function PipelineProgress({
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
-                  background: isComplete ? "#22c55e" : "transparent",
+                  background: isComplete ? "#888" : "transparent",
                   border: isComplete
-                    ? "2px solid #22c55e"
+                    ? "2px solid #888"
                     : isActive
-                      ? "2px solid #22c55e"
+                      ? "2px solid #888"
                       : "2px solid #444",
                   transition: "all 0.3s ease",
                 }}
@@ -109,7 +109,7 @@ function PipelineProgress({
                       width: "8px",
                       height: "8px",
                       borderRadius: "50%",
-                      background: "#22c55e",
+                      background: "#888",
                       animation: "anteater-pulse 1.5s ease-in-out infinite",
                     }}
                   />
@@ -121,7 +121,7 @@ function PipelineProgress({
                   fontSize: "13px",
                   fontWeight: isActive ? 600 : 400,
                   color: isComplete
-                    ? "#22c55e"
+                    ? "#888"
                     : isActive
                       ? "#fff"
                       : "#555",
@@ -300,7 +300,7 @@ export function AnteaterBar({
                     background: "transparent",
                     border: "none",
                     outline: "none",
-                    color: status === "error" ? "#ef4444" : isPipelineActive ? "#22c55e" : "#fff",
+                    color: status === "error" ? "#ef4444" : isPipelineActive ? "#888" : "#fff",
                     fontSize: "16px",
                     fontFamily: "inherit",
                     minWidth: 0,
@@ -329,26 +329,26 @@ export function AnteaterBar({
                 height: `${BUTTON_SIZE}px`,
                 borderRadius: "50%",
                 border: "none",
-                background: canSend ? "#22c55e" : "#fff",
+                background: canSend ? "#888" : "#fff",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 boxShadow: canSend
-                  ? "0 4px 24px rgba(34, 197, 94, 0.4)"
+                  ? "0 4px 24px rgba(0, 0, 0, 0.4)"
                   : "0 4px 24px rgba(0, 0, 0, 0.3)",
                 transition: "all 0.2s ease",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = "scale(1.08)";
                 e.currentTarget.style.boxShadow = canSend
-                  ? "0 4px 32px rgba(34, 197, 94, 0.6)"
+                  ? "0 4px 32px rgba(0, 0, 0, 0.5)"
                   : "0 4px 32px rgba(0, 0, 0, 0.4)";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = "scale(1)";
                 e.currentTarget.style.boxShadow = canSend
-                  ? "0 4px 24px rgba(34, 197, 94, 0.4)"
+                  ? "0 4px 24px rgba(0, 0, 0, 0.4)"
                   : "0 4px 24px rgba(0, 0, 0, 0.3)";
               }}
             >
