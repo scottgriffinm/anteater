@@ -15,6 +15,7 @@ const {
   generateConfig,
   generateApiRoute,
   generateWorkflow,
+  generateClaudeSettings,
   patchLayout,
   scaffoldFiles,
 } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
@@ -94,6 +95,7 @@ describe("generateWorkflow", () => {
       allowedGlobs: ["app/**", "components/**"],
       blockedGlobs: ["app/api/**", ".env*"],
       productionBranch: "main",
+      model: "sonnet",
     });
     expect(result).toContain("workflow_dispatch");
     expect(result).toContain("timeout-minutes: 10");
@@ -106,6 +108,7 @@ describe("generateWorkflow", () => {
       allowedGlobs: ["src/**"],
       blockedGlobs: [".env*"],
       productionBranch: "main",
+      model: "sonnet",
     });
     expect(result).toContain("src/**");
     expect(result).toContain(".env*");
@@ -118,6 +121,7 @@ describe("generateWorkflow", () => {
       allowedGlobs: ["app/**"],
       blockedGlobs: [],
       productionBranch: "main",
+      model: "sonnet",
     });
     expect(result).toContain("gh pr merge");
     expect(result).toContain("--squash");
@@ -131,8 +135,19 @@ describe("generateWorkflow — claude-code-action", () => {
       allowedGlobs: ["app/**"],
       blockedGlobs: [".env*"],
       productionBranch: "main",
+      model: "sonnet",
     });
     expect(result).toContain("anthropics/claude-code-action@v1");
+  });
+
+  it("includes model in workflow", () => {
+    const result = generateWorkflow({
+      allowedGlobs: ["app/**"],
+      blockedGlobs: [".env*"],
+      productionBranch: "main",
+      model: "opus[1m]",
+    });
+    expect(result).toContain('model: "opus[1m]"');
   });
 
   it("includes build verification instruction in prompt", () => {
@@ -140,6 +155,7 @@ describe("generateWorkflow — claude-code-action", () => {
       allowedGlobs: ["app/**"],
       blockedGlobs: [".env*"],
       productionBranch: "main",
+      model: "sonnet",
     });
     expect(result).toContain("run the build command");
     expect(result).toContain("fix the issues");
@@ -150,11 +166,46 @@ describe("generateWorkflow — claude-code-action", () => {
       allowedGlobs: ["app/**"],
       blockedGlobs: [".env*"],
       productionBranch: "main",
+      model: "sonnet",
     });
     const installIdx = result.indexOf("pnpm install");
     const agentIdx = result.indexOf("claude-code-action");
     expect(installIdx).toBeGreaterThan(-1);
     expect(agentIdx).toBeGreaterThan(installIdx);
+  });
+});
+
+describe("generateClaudeSettings", () => {
+  it("generates sandboxed settings with deny list", () => {
+    const result = generateClaudeSettings({ model: "sonnet", permissionsMode: "sandboxed" });
+    const parsed = JSON.parse(result);
+    expect(parsed.model).toBe("sonnet");
+    expect(parsed.alwaysThinkingEnabled).toBe(true);
+    expect(parsed.skipDangerousModePermissionPrompt).toBe(true);
+    expect(parsed.permissions.defaultMode).toBe("bypassPermissions");
+    expect(parsed.permissions.allow).toContain("Edit");
+    expect(parsed.permissions.allow).toContain("Bash(git *)");
+    expect(parsed.permissions.deny).toContain("WebFetch");
+    expect(parsed.permissions.deny).toContain("WebSearch");
+    expect(parsed.permissions.deny).toContain("Bash(curl *)");
+    expect(parsed.permissions.deny).toContain("mcp__*");
+  });
+
+  it("generates unrestricted settings with no deny list", () => {
+    const result = generateClaudeSettings({ model: "opus[1m]", permissionsMode: "unrestricted" });
+    const parsed = JSON.parse(result);
+    expect(parsed.model).toBe("opus[1m]");
+    expect(parsed.permissions.allow).toContain("Bash");
+    expect(parsed.permissions.allow).toContain("WebFetch");
+    expect(parsed.permissions.allow).toContain("WebSearch");
+    expect(parsed.permissions.allow).toContain("mcp__*");
+    expect(parsed.permissions.deny).toEqual([]);
+  });
+
+  it("defaults to sandboxed for unknown permissionsMode", () => {
+    const result = generateClaudeSettings({ model: "haiku", permissionsMode: "unknown" });
+    const parsed = JSON.parse(result);
+    expect(parsed.permissions.deny.length).toBeGreaterThan(0);
   });
 });
 
@@ -211,12 +262,15 @@ describe("scaffoldFiles", () => {
       isTypeScript: true,
       isAppRouter: true,
       layoutFile: null, // skip layout patching for this test
+      model: "sonnet",
+      permissionsMode: "sandboxed",
     });
 
-    expect(results.length).toBeGreaterThanOrEqual(3);
+    expect(results.length).toBeGreaterThanOrEqual(4);
     expect(results).toContain("anteater.config.ts");
     expect(results.some((f) => f.includes("route.ts"))).toBe(true);
     expect(results.some((f) => f.includes("anteater.yml"))).toBe(true);
+    expect(results.some((f) => f.includes("settings.local.json"))).toBe(true);
   });
 
   it("skips files that already exist", async () => {

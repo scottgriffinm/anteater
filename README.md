@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="anteater.svg" alt="Anteater" width="200" />
+</p>
+
 # Anteater
 
 Let your users design your app.
