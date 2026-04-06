@@ -53,18 +53,18 @@ async function removeDependency() {
   const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
   let changed = false;
 
-  if (pkg.dependencies?.["@anteater/next"]) {
-    delete pkg.dependencies["@anteater/next"];
+  if (pkg.dependencies?.["next-anteater"]) {
+    delete pkg.dependencies["next-anteater"];
     changed = true;
   }
-  if (pkg.devDependencies?.["@anteater/next"]) {
-    delete pkg.devDependencies["@anteater/next"];
+  if (pkg.devDependencies?.["next-anteater"]) {
+    delete pkg.devDependencies["next-anteater"];
     changed = true;
   }
 
   if (changed) {
     await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
-    ok("Removed @anteater/next from package.json");
+    ok("Removed next-anteater from package.json");
   }
   return changed;
 }

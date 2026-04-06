@@ -35,6 +35,7 @@ vi.mock("../../packages/next-anteater/lib/ui.mjs", () => {
       return opts[0].value;
     }),
     spinner: vi.fn(async (msg, fn) => fn()),
+    closeRL: vi.fn(),
   };
 });
 

@@ -9,7 +9,7 @@ import { execSync } from "node:child_process";
 import {
   bold, dim, green, red, yellow, cyan,
   ok, fail, warn, info, heading, blank,
-  ask, confirm, select, spinner,
+  ask, confirm, select, spinner, closeRL,
 } from "./ui.mjs";
 import { detectProject } from "./detect.mjs";
 import { scaffoldFiles } from "./scaffold.mjs";
@@ -89,7 +89,12 @@ export async function main() {
   if (githubToken.startsWith("gho_")) {
     warn("Your GitHub CLI token is a short-lived OAuth token (expires in ~8 hours).");
     info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
-    info(`Create one at ${cyan("https://github.com/settings/tokens")} with ${bold("repo")} + ${bold("workflow")} scopes.`);
+    blank();
+    info(`${bold("Create a Fine-grained token:")} ${cyan("https://github.com/settings/tokens?type=beta")}`);
+    info(`  1. Click ${bold("Generate new token")}`);
+    info(`  2. Select ${bold("Only select repositories")} → pick your repo`);
+    info(`  3. Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} → Read and write`);
+    info(`  4. Generate and copy the token`);
     blank();
     githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
     if (!githubToken) {
@@ -107,7 +112,8 @@ export async function main() {
   if (!check.ok && check.missing.length > 0 && !check.missing.includes("unknown")) {
     if (githubToken.startsWith("ghp_") || githubToken.startsWith("github_pat_")) {
       fail("Token is missing required scopes: " + check.missing.join(", "));
-      info("Create a new PAT with repo + workflow scopes.");
+      info(`Create a new Fine-grained PAT at ${cyan("https://github.com/settings/tokens?type=beta")}`);
+      info(`Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} → Read and write`);
       process.exit(1);
     }
     info("Upgrading token scopes...");
@@ -199,12 +205,12 @@ export async function main() {
   heading("Installing");
 
   const installCmd = {
-    pnpm: "pnpm add @anteater/next",
-    yarn: "yarn add @anteater/next",
-    npm: "npm install @anteater/next",
+    pnpm: "pnpm add next-anteater",
+    yarn: "yarn add next-anteater",
+    npm: "npm install next-anteater",
   }[project.packageManager];
 
-  await spinner("Installing @anteater/next", () => {
+  await spinner("Installing next-anteater", () => {
     execSync(installCmd, { cwd, stdio: "ignore" });
   });
 
@@ -221,6 +227,7 @@ export async function main() {
       layoutFile: project.layoutFile,
       model,
       permissionsMode,
+      packageManager: project.packageManager,
     })
   );
 
@@ -307,6 +314,7 @@ export async function main() {
   else warn("Test dispatch failed \u2014 check GitHub Actions");
 
   // ─── Done! ──────────────────────────────────────────────────
+  closeRL();
   blank();
   console.log(`  ${bold(green("\u{1F41C} Anteater is ready."))}`);
   blank();

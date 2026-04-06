@@ -21,7 +21,7 @@ async function writeIfNotExists(path, content) {
 export function generateConfig({ repo, allowedGlobs, blockedGlobs, autoMerge, isTypeScript, productionBranch }) {
   const ext = isTypeScript ? "ts" : "js";
   const typeImport = isTypeScript
-    ? `import type { AnteaterConfig } from "@anteater/next";\n\n`
+    ? `import type { AnteaterConfig } from "next-anteater";\n\n`
     : "";
   const typeAnnotation = isTypeScript ? ": AnteaterConfig" : "";
 
@@ -65,7 +65,7 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
 
   // --- Imports ---
   add('import { NextRequest, NextResponse } from "next/server";');
-  if (TS) add('import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "@anteater/next";');
+  if (TS) add('import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "next-anteater";');
   add("");
 
   // --- Helpers ---
@@ -206,9 +206,7 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("      if (prs.length) {");
   add("        const pr = prs[0];");
   add("        if (pr.merged_at) {");
-  add("          const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
-  add("          const step = mergedAgo > 150000 ? \"done\" : \"redeploying\";");
-  add("          return status({ step, completed: step === \"done\" });");
+  add("          return status({ step: \"deploying\", completed: false });");
   add("        }");
   add("        if (pr.state === \"closed\") {");
   add('          return status({ step: "error", completed: true, error: "PR was closed without merging" });');
@@ -297,11 +295,12 @@ export function generateClaudeSettings({ model, permissionsMode }) {
 /**
  * Generate the GitHub Actions workflow.
  */
-export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch, model }) {
+export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch, model, packageManager = "npm" }) {
   const allowed = allowedGlobs.join(", ");
   const blocked = blockedGlobs.join(", ");
 
   return `name: Anteater Apply
+run-name: "anteater [\${{ inputs.requestId }}] [\${{ inputs.mode }}] \${{ inputs.prompt }}"
 
 on:
   workflow_dispatch:
@@ -353,9 +352,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: |
-          npm install -g pnpm@9 --silent
-          pnpm install --frozen-lockfile
+        run: ${packageManager === "pnpm" ? "npm install -g pnpm@9 --silent && pnpm install --frozen-lockfile" : packageManager === "yarn" ? "yarn install --frozen-lockfile" : "npm ci"}
 
       - name: Run Anteater agent
         uses: anthropics/claude-code-action@v1
@@ -385,9 +382,9 @@ jobs:
         run: |
           git add -A
           if git diff --staged --quiet; then
-            echo "has_changes=false" >> "\\$GITHUB_OUTPUT"
+            echo "has_changes=false" >> "\$GITHUB_OUTPUT"
           else
-            echo "has_changes=true" >> "\\$GITHUB_OUTPUT"
+            echo "has_changes=true" >> "\$GITHUB_OUTPUT"
           fi
 
       - name: Commit changes
@@ -434,6 +431,11 @@ jobs:
 
 /**
  * Generate the /api/anteater/runs route handler for multi-run discovery.
+ *
+ * Uses workflow runs as the primary data source (via run-name containing
+ * requestId, mode, and prompt). Fetches job steps only for in-progress runs
+ * (to distinguish initializing vs working) and failed runs (to get the
+ * failing step name). Merges with PR data for post-merge states.
  */
 export function generateRunsRoute({ isTypeScript }) {
   const ext = isTypeScript ? "ts" : "js";
@@ -442,8 +444,10 @@ export function generateRunsRoute({ isTypeScript }) {
   const add = (s) => lines.push(s);
 
   add('import { NextResponse } from "next/server";');
-  if (TS) add('import type { AnteaterRun, AnteaterRunsResponse } from "@anteater/next";');
+  if (TS) add('import type { AnteaterRun, AnteaterRunsResponse } from "next-anteater";');
   add("");
+
+  // --- Helpers ---
   add("function getRepo()" + (TS ? ": string | undefined" : "") + " {");
   add("  if (process.env.ANTEATER_GITHUB_REPO) return process.env.ANTEATER_GITHUB_REPO;");
   add("  const owner = process.env.VERCEL_GIT_REPO_OWNER;");
@@ -452,12 +456,23 @@ export function generateRunsRoute({ isTypeScript }) {
   add("  return undefined;");
   add("}");
   add("");
+  add("function emptyResponse() {");
+  add("  return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("}");
+  add("");
+  add("/** Parse run-name format: \"anteater [requestId] [mode] prompt text\" */");
+  add("function parseRunName(title" + (TS ? ": string" : "") + ")" + (TS ? ": { requestId: string; mode: \"prod\" | \"copy\"; prompt: string } | null" : "") + " {");
+  add("  const m = title.match(/^anteater \\[([^\\]]+)\\] \\[([^\\]]+)\\] (.+)$/);");
+  add("  if (!m) return null;");
+  add("  return { requestId: m[1], mode: m[2] === \"copy\" ? \"copy\" : \"prod\"" + (TS ? " as const" : "") + ", prompt: m[3] };");
+  add("}");
+  add("");
+
+  // --- GET handler ---
   add("export async function GET() {");
   add("  const repo = getRepo();");
   add("  const token = process.env.GITHUB_TOKEN;");
-  add("  if (!repo || !token) {");
-  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
-  add("  }");
+  add("  if (!repo || !token) return emptyResponse();");
   add("");
   add("  const gh = (url" + (TS ? ": string" : "") + ") =>");
   add("    fetch(url, {");
@@ -470,48 +485,116 @@ export function generateRunsRoute({ isTypeScript }) {
   add("    });");
   add("");
   add("  try {");
-  add("    const owner = repo.split(\"/\")[0];");
-  add("    const refsRes = await gh(`https://api.github.com/repos/${repo}/git/matching-refs/heads/anteater/`);");
-  add("    const refs" + (TS ? ": Array<{ ref: string }>" : "") + " = refsRes.ok ? await refsRes.json() : [];");
+  add("    // Fetch workflow runs and PRs in parallel");
+  add("    const [wfRes, prsRes] = await Promise.all([");
+  add("      gh(`https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=10`),");
+  add("      gh(`https://api.github.com/repos/${repo}/pulls?state=all&per_page=20&sort=created&direction=desc`),");
+  add("    ]);");
   add("");
-  add("    const prsRes = await gh(`https://api.github.com/repos/${repo}/pulls?state=all&per_page=20&sort=created&direction=desc`);");
+  add("    const wfData = wfRes.ok ? await wfRes.json() : { workflow_runs: [] };");
   add("    const allPrs" + (TS ? ": any[]" : "") + " = prsRes.ok ? await prsRes.json() : [];");
-  add("    const anteaterPrs = allPrs.filter((pr" + (TS ? ": any" : "") + ") => pr.head.ref.startsWith(\"anteater/\"));");
-  add("    const prByBranch = new Map(anteaterPrs.map((pr" + (TS ? ": any" : "") + ") => [pr.head.ref, pr]));");
   add("");
-  add("    const runs" + (TS ? ": AnteaterRun[]" : "") + " = [];");
-  add("    const branchNames = refs.map((r) => r.ref.replace(\"refs/heads/\", \"\"));");
+  add("    // Filter workflow runs that have our run-name format");
+  add("    const wfRuns = (wfData.workflow_runs || []).filter(");
+  add("      (r" + (TS ? ": any" : "") + ") => r.display_title?.startsWith(\"anteater [\")");
+  add("    );");
+  add("");
+  add("    // Index PRs by requestId (last segment of branch name)");
+  add("    const anteaterPrs = allPrs.filter((pr" + (TS ? ": any" : "") + ") => pr.head.ref.startsWith(\"anteater/\"));");
+  add("    const prByReqId = new Map" + (TS ? "<string, any>" : "") + "();");
   add("    for (const pr of anteaterPrs) {");
-  add("      if (!branchNames.includes(pr.head.ref)) branchNames.push(pr.head.ref);");
+  add("      const parts = pr.head.ref.split(\"-\");");
+  add("      const reqId = parts[parts.length - 1];");
+  add("      if (reqId) prByReqId.set(reqId, pr);");
   add("    }");
   add("");
-  add("    for (const branch of branchNames) {");
-  add("      const pr = prByBranch.get(branch);");
-  add("      const parts = branch.split(\"-\");");
-  add("      const requestId = parts[parts.length - 1] || \"\";");
-  add("      const mode = branch.includes(\"friend-\") ? \"copy\" : \"prod\";");
-  add("      let step" + (TS ? ": string" : "") + ";");
+  add("    // First pass: classify each workflow run, collect jobs-needed list");
+  add("    const runs" + (TS ? ": AnteaterRun[]" : "") + " = [];");
+  add("    const needJobs" + (TS ? ": Array<{ wfRun: any; runData: Omit<AnteaterRun, \"step\"> }>" : "") + " = [];");
   add("");
+  add("    for (const wfRun of wfRuns) {");
+  add("      const parsed = parseRunName(wfRun.display_title);");
+  add("      if (!parsed) continue;");
+  add("");
+  add("      const { requestId, mode, prompt } = parsed;");
+  add("      const branch = mode === \"copy\"");
+  add("        ? `anteater/friend-${requestId}`");
+  add("        : `anteater/run-${requestId}`;");
+  add("      const startedAt = wfRun.created_at;");
+  add("      const pr = prByReqId.get(requestId);");
+  add("      const base = { branch, requestId, prompt, mode, startedAt };");
+  add("");
+  add("      // Check PR state first (takes precedence for later stages)");
   add("      if (pr?.merged_at) {");
   add("        const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
-  add("        if (mergedAgo > 300000) continue;");
-  add("        step = mergedAgo > 150000 ? \"done\" : \"redeploying\";");
-  add("      } else if (pr?.state === \"closed\") {");
+  add("        if (mergedAgo > 300000) continue; // >5 min ago, done");
+  add("        runs.push({ ...base, step: \"deploying\" });");
   add("        continue;");
-  add("      } else if (pr) {");
-  add("        step = \"merging\";");
-  add("      } else {");
-  add("        step = \"working\";");
+  add("      }");
+  add("      if (pr?.state === \"closed\") continue; // closed without merge");
+  add("      if (pr?.state === \"open\") {");
+  add("        runs.push({ ...base, step: \"merging\" });");
+  add("        continue;");
   add("      }");
   add("");
-  add("      const prompt = pr?.title?.replace(/^anteater:\\\\s*/i, \"\") || \"Starting...\";");
-  add("      runs.push({ branch, requestId, prompt, step, mode });");
-  add("      if (runs.length >= 5) break;");
+  add("      // No PR — determine step from workflow run status");
+  add("      if (wfRun.status === \"completed\") {");
+  add("        if (wfRun.conclusion === \"failure\") {");
+  add("          // Need jobs to find which step failed");
+  add("          needJobs.push({ wfRun, runData: base });");
+  add("        }");
+  add("        // success without PR shouldn't happen (no changes?), skip");
+  add("        continue;");
+  add("      }");
+  add("");
+  add("      if (wfRun.status === \"queued\") {");
+  add("        runs.push({ ...base, step: \"initializing\" });");
+  add("        continue;");
+  add("      }");
+  add("");
+  add("      if (wfRun.status === \"in_progress\") {");
+  add("        // Need jobs to check if agent step has started");
+  add("        needJobs.push({ wfRun, runData: base });");
+  add("        continue;");
+  add("      }");
   add("    }");
   add("");
-  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs, deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("    // Second pass: fetch jobs in parallel for runs that need step detail");
+  add("    if (needJobs.length > 0) {");
+  add("      const jobResults = await Promise.all(");
+  add("        needJobs.map(async ({ wfRun, runData }) => {");
+  add("          try {");
+  add("            const res = await gh(wfRun.jobs_url);");
+  add("            if (!res.ok) return { wfRun, runData, steps: [] };");
+  add("            const data = await res.json();");
+  add("            return { wfRun, runData, steps: data.jobs?.[0]?.steps || [] };");
+  add("          } catch {");
+  add("            return { wfRun, runData, steps: [] };");
+  add("          }");
+  add("        })");
+  add("      );");
+  add("");
+  add("      for (const { wfRun, runData, steps } of jobResults) {");
+  add("        if (wfRun.conclusion === \"failure\") {");
+  add("          const failed = steps.find((s" + (TS ? ": any" : "") + ") => s.conclusion === \"failure\");");
+  add("          runs.push({ ...runData, step: \"error\", failedStep: failed?.name || \"Unknown\" });");
+  add("        } else {");
+  add("          // in_progress — check if agent step has started");
+  add("          const agentStep = steps.find((s" + (TS ? ": any" : "") + ") => s.name === \"Run Anteater agent\");");
+  add("          const isWorking = agentStep?.status === \"in_progress\" || agentStep?.conclusion === \"success\";");
+  add("          runs.push({ ...runData, step: isWorking ? \"working\" : \"initializing\" });");
+  add("        }");
+  add("      }");
+  add("    }");
+  add("");
+  add("    // Sort newest first, cap at 5");
+  add("    runs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());");
+  add("");
+  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "(");
+  add("      { runs: runs.slice(0, 5), deploymentId: process.env.VERCEL_DEPLOYMENT_ID }");
+  add("    );");
   add("  } catch {");
-  add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("    return emptyResponse();");
   add("  }");
   add("}");
 
@@ -658,7 +741,7 @@ export async function patchLayout(layoutPath, cwd) {
   }
 
   // Add import at the top (after last import line)
-  const importLine = `import { AnteaterBar } from "@anteater/next";\n`;
+  const importLine = `import { AnteaterBar } from "next-anteater";\n`;
   const lastImportIdx = content.lastIndexOf("import ");
   if (lastImportIdx !== -1) {
     const endOfLine = content.indexOf("\n", lastImportIdx);
