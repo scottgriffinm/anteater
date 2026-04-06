@@ -104,6 +104,26 @@ To uninstall Anteater from an external project: `npx next-anteater uninstall`
 
 The CLI is the product. If it doesn't work, nothing works. Testing must go through the CLI.
 
+### Piping Inputs to the Setup CLI
+
+The setup CLI is interactive but supports piped stdin. The inputs it expects **depend on the GitHub token type**:
+
+**If `gh auth token` returns an OAuth token (`gho_*`)** — CLI will ask for a PAT:
+```bash
+printf '%s\n' "$ANTHROPIC_KEY" "$GITHUB_PAT" "Y" "4" "1" | npx next-anteater setup
+```
+Inputs: (1) Anthropic key, (2) GitHub PAT, (3) accept default paths, (4) model choice, (5) permissions mode.
+
+**If `gh auth token` returns a classic PAT (`ghp_*`)** — CLI skips the PAT prompt:
+```bash
+printf '%s\n' "$ANTHROPIC_KEY" "Y" "4" "1" | npx next-anteater setup
+```
+Inputs: (1) Anthropic key, (2) accept default paths, (3) model choice, (4) permissions mode.
+
+**Check which case you're in BEFORE piping.** If you pipe the wrong number of inputs, answers shift and the CLI gets garbage for every subsequent prompt. The `gh auth token` prefix tells you: `gho_` = OAuth (5 inputs), `ghp_`/`github_pat_` = PAT (4 inputs).
+
+Model choices: 1=Sonnet, 2=Opus, 3=Opus 1M, 4=Haiku. Permission choices: 1=Sandboxed, 2=Unrestricted.
+
 ## Vercel
 
 - Landing page: www.anteater.cool
