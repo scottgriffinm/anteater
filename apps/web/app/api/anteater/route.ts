@@ -160,6 +160,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enforce 5-run limit by checking active anteater branches
+    const refsRes = await fetch(
+      `https://api.github.com/repos/${repo}/git/matching-refs/heads/anteater/`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        cache: "no-store",
+      },
+    );
+    if (refsRes.ok) {
+      const refs = await refsRes.json();
+      if (Array.isArray(refs) && refs.length >= 5) {
+        log("warn", "POST /api/anteater — 5 run limit reached", { activeRuns: refs.length });
+        return NextResponse.json<AnteaterResponse>(
+          { requestId: "", branch: "", status: "error", error: "Maximum 5 concurrent runs — wait for one to finish" },
+          { status: 429 },
+        );
+      }
+    }
+
     const requestId = crypto.randomUUID().slice(0, 8);
     const branch =
       body.mode === "copy"

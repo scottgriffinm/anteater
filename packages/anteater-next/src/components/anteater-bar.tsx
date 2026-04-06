@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useAnteater } from "../hooks/use-anteater";
-import type { PipelineStep } from "../hooks/use-anteater";
-import type { AnteaterBarProps } from "../types";
-
-const STEP_LABELS: Record<PipelineStep, string> = {
-  initializing: "Initializing",
-  working: "Working on changes",
-  merging: "Merging changes",
-  redeploying: "Redeploying",
-  done: "Done!",
-};
+import { useAnteaterRuns } from "../hooks/use-anteater-runs";
+import type { AnteaterBarProps, AnteaterRun } from "../types";
 
 const BUTTON_SIZE = 48;
+
+const STEP_EMOJI: Record<string, string> = {
+  initializing: "\u{1F680}",
+  working: "\u{1F528}",
+  merging: "\u{1F500}",
+  redeploying: "\u{2699}\uFE0F",
+  done: "\u{2705}",
+  error: "\u{274C}",
+};
 
 function AnteaterLogo({ size = 22, color = "#888" }: { size?: number; color?: string }) {
   return (
@@ -52,91 +52,38 @@ function SendIcon({ size = 20, color = "#fff" }: { size?: number; color?: string
   );
 }
 
-function PipelineProgress({
-  currentStep,
-  steps,
-}: {
-  currentStep: PipelineStep;
-  steps: readonly PipelineStep[];
-}) {
-  const currentIndex = steps.indexOf(currentStep);
+function RunsList({ runs }: { runs: AnteaterRun[] }) {
+  if (runs.length === 0) return null;
 
   return (
-    <div
-      style={{
-        padding: "12px 16px",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        {steps.map((step, i) => {
-          const isActive = i === currentIndex;
-          const isComplete = i < currentIndex;
-
-          return (
-            <div
-              key={step}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-              }}
-            >
-              <div
-                style={{
-                  width: "20px",
-                  height: "20px",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  background: isComplete ? "#888" : "transparent",
-                  border: isComplete
-                    ? "2px solid #888"
-                    : isActive
-                      ? "2px solid #888"
-                      : "2px solid #444",
-                  transition: "all 0.3s ease",
-                }}
-              >
-                {isComplete ? (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : isActive ? (
-                  <div
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "50%",
-                      background: "#888",
-                      animation: "anteater-pulse 1.5s ease-in-out infinite",
-                    }}
-                  />
-                ) : null}
-              </div>
-
-              <span
-                style={{
-                  fontSize: "13px",
-                  fontWeight: isActive ? 600 : 400,
-                  color: isComplete
-                    ? "#888"
-                    : isActive
-                      ? "#fff"
-                      : "#555",
-                  transition: "all 0.3s ease",
-                }}
-              >
-                {STEP_LABELS[step]}
-                {isActive && step === "redeploying" && (
-                  <span style={{ color: "#888", fontWeight: 400 }}> — page will refresh</span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+    <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "6px" }}>
+      {runs.map((run) => (
+        <div
+          key={run.branch}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <span style={{ fontSize: "14px", flexShrink: 0 }}>
+            {STEP_EMOJI[run.step] || STEP_EMOJI.working}
+          </span>
+          <span
+            style={{
+              fontSize: "13px",
+              color: run.step === "done" ? "#888" : "#ccc",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {run.prompt}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -150,8 +97,7 @@ export function AnteaterBar({
   const [prompt, setPrompt] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { status, response, error, pipelineStep, pipelineSteps, submit, reset } =
-    useAnteater(apiEndpoint);
+  const { runs, submitting, error, canSubmit, submit } = useAnteaterRuns(apiEndpoint);
 
   useEffect(() => {
     if (isExpanded && inputRef.current) {
@@ -164,9 +110,9 @@ export function AnteaterBar({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!prompt.trim() || status === "submitting") return;
+    if (!prompt.trim() || submitting) return;
 
-    await submit({
+    const result = await submit({
       prompt: prompt.trim(),
       mode,
       branch,
@@ -174,6 +120,10 @@ export function AnteaterBar({
         pathname: typeof window !== "undefined" ? window.location.pathname : undefined,
       },
     });
+
+    if (result) {
+      setPrompt("");
+    }
   };
 
   const handleButtonClick = () => {
@@ -181,18 +131,19 @@ export function AnteaterBar({
       setIsExpanded(true);
       return;
     }
-    if (prompt.trim() && status !== "submitting" && !isPipelineActive) {
+    if (prompt.trim() && canSubmit) {
       handleSubmit();
       return;
     }
-    setIsExpanded(false);
-    reset();
-    setPrompt("");
+    if (runs.length === 0) {
+      setIsExpanded(false);
+      setPrompt("");
+    }
   };
 
-  const isPipelineActive = pipelineStep !== null;
+  const hasRuns = runs.length > 0;
   const hasText = prompt.trim().length > 0;
-  const canSend = hasText && status !== "submitting" && !isPipelineActive;
+  const canSend = hasText && canSubmit;
 
   return (
     <>
@@ -218,10 +169,9 @@ export function AnteaterBar({
           alignItems: "flex-end",
         }}
       >
-        {/* Stacked: progress behind input, button overlapping */}
         <div style={{ position: "relative" }}>
-          {/* Progress/error panel — sits behind the input bar, narrower, slides up */}
-          {isExpanded && (isPipelineActive || (status === "error" && error)) && (
+          {/* Runs list panel — sits behind the input bar */}
+          {isExpanded && (hasRuns || error) && (
             <div
               style={{
                 position: "absolute",
@@ -238,10 +188,8 @@ export function AnteaterBar({
                 paddingBottom: `${BUTTON_SIZE + 4}px`,
               }}
             >
-              {isPipelineActive && (
-                <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
-              )}
-              {status === "error" && error && (
+              {hasRuns && <RunsList runs={runs} />}
+              {error && (
                 <div
                   style={{
                     padding: "10px 16px",
@@ -286,29 +234,26 @@ export function AnteaterBar({
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={
-                    status === "submitting"
-                      ? "Sending to Anteater..."
-                      : status === "error"
-                        ? error ?? "Something went wrong"
-                        : isPipelineActive
-                          ? STEP_LABELS[pipelineStep] + "..."
-                          : placeholder
+                    submitting
+                      ? "Sending..."
+                      : !canSubmit && runs.length >= 5
+                        ? "Max 5 runs at once"
+                        : placeholder
                   }
-                  disabled={status === "submitting" || isPipelineActive}
+                  disabled={submitting || runs.length >= 5}
                   style={{
                     flex: 1,
                     background: "transparent",
                     border: "none",
                     outline: "none",
-                    color: status === "error" ? "#ef4444" : isPipelineActive ? "#888" : "#fff",
+                    color: error ? "#ef4444" : "#fff",
                     fontSize: "16px",
                     fontFamily: "inherit",
                     minWidth: 0,
                   }}
                   onKeyDown={(e) => {
-                    if (e.key === "Escape" && !isPipelineActive) {
+                    if (e.key === "Escape" && !hasRuns) {
                       setIsExpanded(false);
-                      reset();
                       setPrompt("");
                     }
                   }}
