@@ -1,5 +1,5 @@
 {
-  "name": "anteater",
+  "name": "next-anteater",
   "version": "0.1.0",
   "description": "AI-powered live editing for your Next.js app",
   "bin": {

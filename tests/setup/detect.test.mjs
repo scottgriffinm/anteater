@@ -13,7 +13,7 @@ const fsMock = {
 vi.mock("node:fs/promises", () => fsMock);
 
 // Import AFTER mocks are set up
-const { detectProject } = await import("../../packages/setup-anteater/lib/detect.mjs");
+const { detectProject } = await import("../../packages/next-anteater/lib/detect.mjs");
 
 const CWD = "/fake/project";
 

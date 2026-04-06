@@ -18,7 +18,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-vi.mock("../../packages/setup-anteater/lib/ui.mjs", () => {
+vi.mock("../../packages/next-anteater/lib/ui.mjs", () => {
   const noop = () => {};
   return {
     bold: (s) => s, dim: (s) => s, green: (s) => s, red: (s) => s,
@@ -38,7 +38,7 @@ vi.mock("../../packages/setup-anteater/lib/ui.mjs", () => {
   };
 });
 
-vi.mock("../../packages/setup-anteater/lib/detect.mjs", () => ({
+vi.mock("../../packages/next-anteater/lib/detect.mjs", () => ({
   detectProject: vi.fn(async () => {
     if (!state.isNextJs) return { isNextJs: false, hasGit: false };
     return {
@@ -49,7 +49,7 @@ vi.mock("../../packages/setup-anteater/lib/detect.mjs", () => ({
   }),
 }));
 
-vi.mock("../../packages/setup-anteater/lib/scaffold.mjs", () => ({
+vi.mock("../../packages/next-anteater/lib/scaffold.mjs", () => ({
   scaffoldFiles: vi.fn(async () => [
     "anteater.config.ts", "app/api/anteater/route.ts",
     ".github/workflows/anteater.yml",
@@ -58,7 +58,7 @@ vi.mock("../../packages/setup-anteater/lib/scaffold.mjs", () => ({
   ]),
 }));
 
-vi.mock("../../packages/setup-anteater/lib/secrets.mjs", () => ({
+vi.mock("../../packages/next-anteater/lib/secrets.mjs", () => ({
   hasCommand: vi.fn((cmd) => {
     if (cmd === "gh") return state.hasGh;
     if (cmd === "vercel") return state.hasVercel;
@@ -74,7 +74,7 @@ vi.mock("../../packages/setup-anteater/lib/secrets.mjs", () => ({
 // Import main() at top level — after all vi.mock() calls are hoisted.
 // This avoids the vi.resetModules() + dynamic import pattern that causes
 // vitest's vm.Script to choke on the shebang line.
-const { main } = await import("../../packages/setup-anteater/lib/setup.mjs");
+const { main } = await import("../../packages/next-anteater/lib/setup.mjs");
 
 let originalFetch;
 let mockExit;
@@ -139,14 +139,14 @@ describe("setup flow", () => {
 
   it("passes model and permissionsMode to scaffoldFiles", async () => {
     await main();
-    const { scaffoldFiles } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
+    const { scaffoldFiles } = await import("../../packages/next-anteater/lib/scaffold.mjs");
     const callArgs = scaffoldFiles.mock.calls[0][1];
     expect(callArgs).toHaveProperty("model", "sonnet"); // default from select mock
     expect(callArgs).toHaveProperty("permissionsMode", "sandboxed"); // default from select mock
   });
 
   it("falls back to sandboxed when unrestricted is declined", async () => {
-    const { select, confirm: confirmMock } = await import("../../packages/setup-anteater/lib/ui.mjs");
+    const { select, confirm: confirmMock } = await import("../../packages/next-anteater/lib/ui.mjs");
 
     // Track call count to differentiate select calls
     let selectCallCount = 0;
@@ -166,7 +166,7 @@ describe("setup flow", () => {
 
     await main();
 
-    const { scaffoldFiles } = await import("../../packages/setup-anteater/lib/scaffold.mjs");
+    const { scaffoldFiles } = await import("../../packages/next-anteater/lib/scaffold.mjs");
     const callArgs = scaffoldFiles.mock.calls[0][1];
     // Should fall back to sandboxed
     expect(callArgs).toHaveProperty("permissionsMode", "sandboxed");
