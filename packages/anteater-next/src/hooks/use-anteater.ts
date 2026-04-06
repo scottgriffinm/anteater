@@ -10,7 +10,7 @@ export type PipelineStep = "initializing" | "working" | "merging" | "redeploying
 const PIPELINE_STEPS: PipelineStep[] = ["initializing", "working", "merging", "redeploying"];
 
 const POLL_INTERVAL = 3000;
-const POLL_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+const POLL_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
 
 export function useAnteater(apiEndpoint: string = "/api/anteater") {
   const [status, setStatus] = useState<Status>("idle");

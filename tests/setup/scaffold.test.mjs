@@ -98,7 +98,7 @@ describe("generateWorkflow", () => {
       model: "sonnet",
     });
     expect(result).toContain("workflow_dispatch");
-    expect(result).toContain("timeout-minutes: 10");
+    expect(result).toContain("timeout-minutes: 360");
     expect(result).toContain("actions/checkout@v4");
     expect(result).toContain("node-version: 22");
   });
