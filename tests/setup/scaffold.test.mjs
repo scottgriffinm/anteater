@@ -18,7 +18,7 @@ const {
   generateClaudeSettings,
   patchLayout,
   scaffoldFiles,
-} = await import("../../packages/setup-anteater/lib/scaffold.mjs");
+} = await import("../../packages/next-anteater/lib/scaffold.mjs");
 
 beforeEach(() => {
   vi.clearAllMocks();

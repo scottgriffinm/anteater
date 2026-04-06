@@ -5,7 +5,7 @@ const mockExecSync = vi.fn();
 vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
 
 const { hasCommand, validateAnthropicKey, validateGitHubToken, setGitHubSecret, setVercelEnv, writeEnvLocal } =
-  await import("../../packages/setup-anteater/lib/secrets.mjs");
+  await import("../../packages/next-anteater/lib/secrets.mjs");
 
 let originalFetch;
 
