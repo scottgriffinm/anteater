@@ -33,7 +33,7 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 360
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
