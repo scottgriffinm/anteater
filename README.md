@@ -6,7 +6,7 @@
 
 Let users make your app.
 
-Anteater adds a prompt bar to your Next.js app. Your users describe what they want, and an AI agent rewrites the code, merges it, and redeploys — live in under a minute.
+Anteater adds a prompt bar to your Next.js app. When a user describes a change, Claude edits the code, opens a PR, and redeploys automatically (all via Github actions).
 
 ## Setup
 
