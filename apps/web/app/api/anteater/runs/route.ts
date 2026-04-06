@@ -60,7 +60,16 @@ export async function GET() {
     const anteaterPrs = allPrs.filter((pr) => pr.head.ref.startsWith("anteater/"));
     const prByBranch = new Map(anteaterPrs.map((pr) => [pr.head.ref, pr]));
 
-    // 3. Build runs list
+    // 3. Fetch recent workflow runs to identify actively running branches (1 API call)
+    const wfRes = await gh(
+      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=10&status=in_progress`,
+    );
+    const activeWorkflows: Array<{ head_branch: string }> = wfRes.ok
+      ? (await wfRes.json()).workflow_runs ?? []
+      : [];
+    const activeBranches = new Set(activeWorkflows.map((w) => w.head_branch));
+
+    // 4. Build runs list
     const runs: AnteaterRun[] = [];
     const branchNames = refs.map((r) => r.ref.replace("refs/heads/", ""));
 
@@ -86,8 +95,13 @@ export async function GET() {
       } else if (pr?.state === "closed") {
         continue; // closed without merge, skip
       } else if (pr) {
+        // Open PR — but if it's been open > 30 min, it's probably stuck
+        const prAge = Date.now() - new Date(pr.created_at).getTime();
+        if (prAge > 30 * 60 * 1000) continue;
         step = "merging";
       } else {
+        // Branch with no PR — only show if there's an actively running workflow for it
+        if (!activeBranches.has(branch)) continue;
         step = "working";
       }
 
