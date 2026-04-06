@@ -156,7 +156,10 @@ export function AnteaterBar({
 
   useEffect(() => {
     if (isExpanded && inputRef.current) {
-      inputRef.current.focus();
+      const isMobile = window.matchMedia("(max-width: 768px)").matches;
+      if (!isMobile) {
+        inputRef.current.focus();
+      }
     }
   }, [isExpanded]);
 
@@ -298,7 +301,7 @@ export function AnteaterBar({
                     border: "none",
                     outline: "none",
                     color: status === "error" ? "#ef4444" : isPipelineActive ? "#22c55e" : "#fff",
-                    fontSize: "14px",
+                    fontSize: "16px",
                     fontFamily: "inherit",
                     minWidth: 0,
                   }}
