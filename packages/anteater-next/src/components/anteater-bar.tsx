@@ -270,7 +270,7 @@ export function AnteaterBar({
                   alignItems: "center",
                   background: "#111",
                   border: "1px solid #333",
-                  borderRadius: "24px",
+                  borderRadius: "12px",
                   padding: "8px 16px",
                   height: `${BUTTON_SIZE}px`,
                   boxSizing: "border-box",
