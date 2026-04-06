@@ -38,6 +38,10 @@ After setup, edit `anteater.config.ts` to control:
 - `requireReviewFor` — keywords that block auto-merge (e.g., "auth", "billing")
 - `maxFilesChanged` / `maxDiffBytes` — safety limits on change size
 
+## Security Disclaimer &#x26A0;&#xFE0F;
+
+This software is provided "as is", without warranty of any kind. Use it at your own risk. The authors and contributors are not responsible for any damage, data loss, security breaches, or other harm resulting from the use of this software. By using Anteater, you accept full responsibility for how it is deployed, configured, and who is granted access. See [LICENSE](https://github.com/scottgriffinm/anteater/blob/master/LICENSE) for the full terms.
+
 ## License
 
 [MIT](https://github.com/scottgriffinm/anteater/blob/master/LICENSE)

@@ -31,3 +31,7 @@ Anteater does **not** protect against:
 - Destructive changes from users with prompt bar access.
 
 If you expose Anteater to untrusted users or the public internet, **you do so at your own risk.**
+
+## Security Disclaimer &#x26A0;&#xFE0F;
+
+This software is provided "as is", without warranty of any kind. The authors and contributors accept no liability for any damage, data loss, security breaches, or other harm resulting from its use. By installing or using Anteater, you accept full responsibility for how it is deployed, configured, and who is granted access.
