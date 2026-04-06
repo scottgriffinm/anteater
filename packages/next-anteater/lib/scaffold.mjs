@@ -27,7 +27,14 @@ export function generateConfig({ repo, allowedGlobs, blockedGlobs, autoMerge, is
 
   return {
     filename: `anteater.config.${ext}`,
-    content: `${typeImport}const config${typeAnnotation} = {
+    content: `/**
+ * SECURITY: Anteater lets users modify your app's code via AI.
+ * Only expose the prompt bar to trusted users behind your own auth layer.
+ * Users can make destructive changes and potentially access sensitive data.
+ * Never use this in a production environment with real credentials.
+ * See: https://github.com/scottgriffinm/anteater#security-warning
+ */
+${typeImport}const config${typeAnnotation} = {
   repo: "${repo}",
   productionBranch: "${productionBranch}",
   modes: ["prod", "copy"],

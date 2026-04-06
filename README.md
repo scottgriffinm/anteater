@@ -8,6 +8,16 @@ Let users make your app.
 
 Anteater adds a prompt bar to your Next.js app. When a user describes a change, Claude edits the code, opens a PR, and redeploys automatically (all via Github actions).
 
+## Security Warning
+
+**Anteater gives users the ability to modify your application's code via AI.** This is powerful but dangerous if misused.
+
+- **Only expose Anteater to trusted users.** Any user with access to the prompt bar can instruct the AI agent to make arbitrary code changes, including destructive ones.
+- **Run in a sandboxed environment without real data.** Anteater-generated PRs execute in GitHub Actions with access to your repository secrets and deployment pipeline. A malicious or careless prompt could access sensitive data, delete files, or break your app.
+- **You are responsible for access control.** Anteater does not provide authentication or authorization. Protect the prompt bar behind your own auth layer and restrict it to users you trust completely.
+
+> **TL;DR:** Treat Anteater like giving someone commit access to your repo. Don't expose it to the public internet with real credentials or production data.
+
 ## Setup
 
 ```
@@ -32,4 +42,4 @@ pnpm test
 
 ## License
 
-MIT
+[MIT](LICENSE)
