@@ -88,21 +88,21 @@ Key points:
 - NPM_TOKEN is in root `.env` — extract with `grep`, NEVER read the file directly
 - ANTHROPIC_API_KEY is also in root `.env`
 
-## Installing Anteater on External Projects
+## CRITICAL — Always Use the CLI. NEVER Bypass It.
 
-The setup CLI is interactive: `npx next-anteater setup`
+To install Anteater on an external project: `npx next-anteater setup`
+To uninstall Anteater from an external project: `npx next-anteater uninstall`
 
-When doing it manually (non-interactive), every step matters:
-1. `npm install next-anteater` — install the package
-2. Scaffold files via `scaffoldFiles()` from `lib/scaffold.mjs`
-3. Set ANTHROPIC_API_KEY as GitHub secret on the repo
-4. Set GITHUB_TOKEN in Vercel env vars AND `.env.local`
-5. Push `.github/workflows/anteater.yml` to GitHub
-6. Verify workflow is active
-7. Run test dispatch to confirm pipeline works
-8. Deploy to Vercel
+**That's it. Use the CLI. Every single time. No exceptions.**
 
-DO NOT skip any step. DO NOT try shortcuts. Every step exists for a reason.
+- **NEVER** manually call `scaffoldFiles()`, `patchLayout()`, or any internal lib function to install. The CLI exists for a reason — it handles detection, validation, scaffolding, secrets, env vars, and verification in the correct order.
+- **NEVER** install from a local file path (`npm install /path/to/package`). Always install from npm: `npm install next-anteater`.
+- **NEVER** manually create scaffolded files (config, API routes, workflow YAML, Claude settings). The CLI does this.
+- **NEVER** manually patch the layout file to add AnteaterBar. The CLI does this.
+- **NEVER** manually set GitHub secrets or Vercel env vars as a substitute for running setup. The CLI does this.
+- If the CLI has a bug, **fix the CLI** — don't work around it with manual steps.
+
+The CLI is the product. If it doesn't work, nothing works. Testing must go through the CLI.
 
 ## Vercel
 
