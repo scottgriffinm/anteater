@@ -7,7 +7,7 @@ export function Hero() {
         viewBox="0 0 3814.6667 2340"
         xmlns="http://www.w3.org/2000/svg"
         aria-label="Anteater"
-        className="w-32 h-auto mb-10 text-muted"
+        className="w-32 h-auto mb-6 text-muted"
       >
         <g transform="translate(3814.6667, 0) scale(-1, 1)">
           <path
