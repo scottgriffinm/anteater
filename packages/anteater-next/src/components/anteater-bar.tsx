@@ -64,7 +64,6 @@ function PipelineProgress({
   return (
     <div
       style={{
-        background: "#111",
         padding: "12px 16px",
       }}
     >
@@ -232,8 +231,8 @@ export function AnteaterBar({
                 zIndex: 0,
                 background: "#111",
                 border: "1px solid #444",
-                borderBottom: "none",
-                borderRadius: "12px 12px 0 0",
+                borderRadius: "12px",
+                overflow: "hidden",
                 boxShadow: "0 -4px 16px rgba(0, 0, 0, 0.3)",
                 animation: "anteater-slide-up 0.25s ease-out",
                 paddingBottom: `${BUTTON_SIZE + 4}px`,
