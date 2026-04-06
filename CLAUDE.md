@@ -108,10 +108,39 @@ DO NOT skip any step. DO NOT try shortcuts. Every step exists for a reason.
 
 This repo uses the `scottgriffinm` personal GitHub account, NOT `sgriffin-magnoliacap`. Always `gh auth switch --user scottgriffinm` before push/PR operations on this repo.
 
+## CRITICAL — Git Author Email
+
+**All git commits in this repo (and any repo deploying to scottgriffinm's Vercel) MUST use:**
+```
+Scott Griffin <scottgriffinm@gmail.com>
+```
+
+Vercel **blocks deploys** from git authors not on the team. If your global git config has `sgriffin@magnoliacap.com`, set the local override:
+```bash
+git config user.email "scottgriffinm@gmail.com"
+git config user.name "Scott Griffin"
+```
+
+**Before every commit, verify:** `git config user.email` returns `scottgriffinm@gmail.com`. If it doesn't, fix it before committing.
+
 ## Vercel
 
 - Scope: `scottgriffinm-5994s-projects`
+- Account email: `scottgriffinm@gmail.com`
 - Landing page: www.anteater.cool
+- Test project: `poopy-glock-the-prequel` (scottgriffinm/poopy-glock-the-prequel, Next.js 16, default branch `master`)
+
+## Branding
+
+- One-liner: **"Let users make your app."**
+- Install command: `npx next-anteater setup`
+
+## Agent Guidelines
+
+- **NEVER fabricate URLs** or present uncertain info as fact. If you don't know a URL, say so.
+- **NEVER read or display .env files.** Extract values silently: `export VAR=$(grep VAR_NAME .env | cut -d= -f2-)`
+- **NEVER guess.** Check memory, codebase, git, CLI output first. Don't ask questions you can answer yourself.
+- **Save learnings to CLAUDE.md**, not memory files. All important info goes here so every future agent has it.
 
 ## NEVER Cut Corners — NON-NEGOTIABLE
 
