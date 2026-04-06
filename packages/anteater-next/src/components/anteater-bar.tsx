@@ -216,61 +216,65 @@ export function AnteaterBar({
           alignItems: "flex-end",
         }}
       >
-        {/* Input row + circle button */}
+        {/* Stacked: progress behind input, button overlapping */}
         <div style={{ position: "relative" }}>
-          {/* Combined input + status panel, tucks behind the circle */}
-          <form
-            onSubmit={handleSubmit}
-            style={{
-              overflow: "hidden",
-              width: isExpanded ? "min(360px, calc(100vw - 100px))" : "0px",
-              opacity: isExpanded ? 1 : 0,
-              marginRight: `${BUTTON_SIZE / 2}px`,
-              transition: "width 0.3s ease, opacity 0.2s ease",
-            }}
-          >
+          {/* Progress/error panel — sits behind the input bar, narrower, slides up */}
+          {isExpanded && (isPipelineActive || (status === "error" && error)) && (
             <div
               style={{
+                position: "absolute",
+                bottom: 0,
+                right: `${BUTTON_SIZE / 2}px`,
+                left: "16px",
+                zIndex: 0,
                 background: "#111",
                 border: "1px solid #333",
-                borderRadius: isPipelineActive || (status === "error" && error)
-                  ? "16px 16px 24px 24px"
-                  : "24px",
-                boxShadow: "0 4px 24px rgba(0, 0, 0, 0.4)",
-                overflow: "hidden",
+                borderRadius: "12px 12px 0 0",
+                boxShadow: "0 -4px 16px rgba(0, 0, 0, 0.3)",
+                animation: "anteater-slide-up 0.25s ease-out",
+                paddingBottom: `${BUTTON_SIZE + 4}px`,
               }}
             >
-              {/* Pipeline progress tab — inside the same container */}
               {isPipelineActive && (
-                <div style={{ animation: "anteater-slide-up 0.25s ease-out" }}>
-                  <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
-                  <div style={{ height: "1px", background: "#333", margin: "0 12px" }} />
-                </div>
+                <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
               )}
-
-              {/* Error message — inside the same container */}
               {status === "error" && error && (
                 <div
                   style={{
                     padding: "10px 16px",
                     fontSize: "13px",
                     color: "#ef4444",
-                    animation: "anteater-slide-up 0.25s ease-out",
                   }}
                 >
                   {error}
-                  <div style={{ height: "1px", background: "#333", margin: "8px -4px 0" }} />
                 </div>
               )}
+            </div>
+          )}
 
-              {/* Input area */}
+          {/* Input bar + circle button row */}
+          <div style={{ position: "relative", zIndex: 1 }}>
+            <form
+              onSubmit={handleSubmit}
+              style={{
+                overflow: "hidden",
+                width: isExpanded ? "min(360px, calc(100vw - 100px))" : "0px",
+                opacity: isExpanded ? 1 : 0,
+                marginRight: `${BUTTON_SIZE / 2}px`,
+                transition: "width 0.3s ease, opacity 0.2s ease",
+              }}
+            >
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
+                  background: "#111",
+                  border: "1px solid #333",
+                  borderRadius: "24px",
                   padding: "8px 16px",
                   height: `${BUTTON_SIZE}px`,
                   boxSizing: "border-box",
+                  boxShadow: "0 4px 24px rgba(0, 0, 0, 0.4)",
                 }}
               >
                 <input
@@ -307,52 +311,51 @@ export function AnteaterBar({
                   }}
                 />
               </div>
-            </div>
-          </form>
+            </form>
 
-          {/* Anteater circle button — absolutely positioned, vertically centered with input row */}
-          <button
-            type="button"
-            onClick={handleButtonClick}
-            style={{
-              position: "absolute",
-              right: 0,
-              bottom: 0,
-              zIndex: 1,
-              width: `${BUTTON_SIZE}px`,
-              height: `${BUTTON_SIZE}px`,
-              borderRadius: "50%",
-              border: "none",
-              background: canSend ? "#22c55e" : "#fff",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              boxShadow: canSend
-                ? "0 4px 24px rgba(34, 197, 94, 0.4)"
-                : "0 4px 24px rgba(0, 0, 0, 0.3)",
-              transition: "all 0.2s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "scale(1.08)";
-              e.currentTarget.style.boxShadow = canSend
-                ? "0 4px 32px rgba(34, 197, 94, 0.6)"
-                : "0 4px 32px rgba(0, 0, 0, 0.4)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "scale(1)";
-              e.currentTarget.style.boxShadow = canSend
-                ? "0 4px 24px rgba(34, 197, 94, 0.4)"
-                : "0 4px 24px rgba(0, 0, 0, 0.3)";
-            }}
-          >
-            {canSend ? (
-              <SendIcon size={20} color="#000" />
-            ) : (
-              <span style={{ marginTop: "-3px" }}><AnteaterLogo size={34} color="#111" /></span>
-            )}
-          </button>
+            {/* Anteater circle button */}
+            <button
+              type="button"
+              onClick={handleButtonClick}
+              style={{
+                position: "absolute",
+                right: 0,
+                bottom: 0,
+                zIndex: 2,
+                width: `${BUTTON_SIZE}px`,
+                height: `${BUTTON_SIZE}px`,
+                borderRadius: "50%",
+                border: "none",
+                background: canSend ? "#22c55e" : "#fff",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: canSend
+                  ? "0 4px 24px rgba(34, 197, 94, 0.4)"
+                  : "0 4px 24px rgba(0, 0, 0, 0.3)",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.08)";
+                e.currentTarget.style.boxShadow = canSend
+                  ? "0 4px 32px rgba(34, 197, 94, 0.6)"
+                  : "0 4px 32px rgba(0, 0, 0, 0.4)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+                e.currentTarget.style.boxShadow = canSend
+                  ? "0 4px 24px rgba(34, 197, 94, 0.4)"
+                  : "0 4px 24px rgba(0, 0, 0, 0.3)";
+              }}
+            >
+              {canSend ? (
+                <SendIcon size={20} color="#000" />
+              ) : (
+                <span style={{ marginTop: "-3px" }}><AnteaterLogo size={34} color="#111" /></span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </>
