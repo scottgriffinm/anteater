@@ -222,9 +222,12 @@ export function AnteaterBar({
           gap: "8px",
         }}
       >
-        {/* Status/progress — slides up above input */}
+        {/* Status/progress — slides up from the input bar */}
         {isExpanded && isPipelineActive && (
-          <div style={{ width: "min(400px, calc(100vw - 64px))" }}>
+          <div style={{
+            width: `min(${360 + BUTTON_SIZE / 2}px, calc(100vw - 76px))`,
+            animation: "anteater-slide-up 0.25s ease-out",
+          }}>
             <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
           </div>
         )}
@@ -233,7 +236,7 @@ export function AnteaterBar({
         {isExpanded && status === "error" && error && (
           <div
             style={{
-              width: "min(400px, calc(100vw - 64px))",
+              width: `min(${360 + BUTTON_SIZE / 2}px, calc(100vw - 76px))`,
               background: "rgba(239, 68, 68, 0.1)",
               border: "1px solid rgba(239, 68, 68, 0.3)",
               borderRadius: "12px",
@@ -248,14 +251,15 @@ export function AnteaterBar({
         )}
 
         {/* Input row + circle button */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          {/* Chat input — slides out to the left */}
+        <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
+          {/* Chat input — slides out to the left, tucks behind the circle */}
           <form
             onSubmit={handleSubmit}
             style={{
               overflow: "hidden",
               width: isExpanded ? "min(360px, calc(100vw - 100px))" : "0px",
               opacity: isExpanded ? 1 : 0,
+              marginRight: `${-BUTTON_SIZE / 2}px`,
               transition: "width 0.3s ease, opacity 0.2s ease",
             }}
           >
@@ -266,7 +270,7 @@ export function AnteaterBar({
                 background: "#111",
                 border: "1px solid #333",
                 borderRadius: "24px",
-                padding: "8px 16px",
+                padding: `8px ${BUTTON_SIZE / 2 + 12}px 8px 16px`,
                 boxShadow: "0 4px 24px rgba(0, 0, 0, 0.4)",
               }}
             >
@@ -306,11 +310,13 @@ export function AnteaterBar({
             </div>
           </form>
 
-          {/* Anteater circle button */}
+          {/* Anteater circle button — sits on top of input's right edge */}
           <button
             type="button"
             onClick={handleButtonClick}
             style={{
+              position: "relative",
+              zIndex: 1,
               width: `${BUTTON_SIZE}px`,
               height: `${BUTTON_SIZE}px`,
               borderRadius: "50%",
