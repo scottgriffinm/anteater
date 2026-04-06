@@ -1,6 +1,6 @@
 {
   "name": "next-anteater",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "AI-powered live editing for your Next.js app",
   "bin": {
     "anteater": "bin/setup-anteater.mjs",
