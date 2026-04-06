@@ -1,5 +1,8 @@
 /**
  * Terminal UI helpers — zero dependencies.
+ *
+ * Handles both interactive (TTY) and piped (file/pipe) input.
+ * When stdin is piped, pre-reads all lines and serves them sequentially.
  */
 import * as readline from "node:readline";
 
@@ -19,38 +22,92 @@ export const info = (msg) => console.log(`  ${dim(msg)}`);
 export const heading = (msg) => console.log(`\n  ${bold(msg)}\n  ${"─".repeat(msg.length)}`);
 export const blank = () => console.log();
 
+// ─── Piped input support ────────────────────────────────────────
+// When stdin is piped (not a TTY), pre-read all lines into a queue.
+// This avoids readline issues where EOF closes the interface mid-setup.
+
+let _pipedLines = null;
+let _pipedReady = null;
+
+if (!process.stdin.isTTY) {
+  _pipedLines = [];
+  _pipedReady = new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin });
+    rl.on("line", (line) => _pipedLines.push(line));
+    rl.on("close", resolve);
+  });
+}
+
+let _pipedIdx = 0;
+
+async function nextPipedLine() {
+  await _pipedReady;
+  if (_pipedIdx < _pipedLines.length) {
+    return _pipedLines[_pipedIdx++];
+  }
+  return "";
+}
+
+// ─── Interactive readline (TTY only) ────────────────────────────
+
+let _rl = null;
+
+function getRL() {
+  if (!_rl) {
+    _rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+  }
+  return _rl;
+}
+
+export function closeRL() {
+  if (_rl) {
+    _rl.close();
+    _rl = null;
+  }
+}
+
 /**
  * Prompt the user for text input.
  */
 export function ask(question, { mask = false } = {}) {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
+  // Piped mode — read next line from pre-buffered input
+  if (_pipedLines) {
+    const prompt = `  ${cyan("?")} ${question} `;
+    process.stdout.write(prompt);
+    return nextPipedLine().then((line) => {
+      process.stdout.write("\n");
+      return line.trim();
     });
+  }
 
-    // If masking, mute output and write dots
+  // Interactive mode — use readline
+  return new Promise((resolve) => {
+    const rl = getRL();
+
     if (mask) {
       const origWrite = process.stdout.write.bind(process.stdout);
+      const restore = () => { process.stdout.write = origWrite; };
+
       process.stdout.write = (chunk, encoding, cb) => {
-        // Let the question prompt through, mask everything after
         if (typeof chunk === "string" && chunk.includes(question)) {
           return origWrite(chunk, encoding, cb);
         }
-        // Replace characters with bullets
         const masked = typeof chunk === "string" ? chunk.replace(/[^\r\n]/g, "•") : chunk;
         return origWrite(masked, encoding, cb);
       };
 
-      rl.on("close", () => {
-        process.stdout.write = origWrite;
+      rl.question(`  ${cyan("?")} ${question} `, (answer) => {
+        restore();
+        resolve(answer.trim());
+      });
+    } else {
+      rl.question(`  ${cyan("?")} ${question} `, (answer) => {
+        resolve(answer.trim());
       });
     }
-
-    rl.question(`  ${cyan("?")} ${question} `, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
   });
 }
 

@@ -168,7 +168,7 @@ describe("generateWorkflow — claude-code-action", () => {
       productionBranch: "main",
       model: "sonnet",
     });
-    const installIdx = result.indexOf("pnpm install");
+    const installIdx = result.indexOf("npm ci");
     const agentIdx = result.indexOf("claude-code-action");
     expect(installIdx).toBeGreaterThan(-1);
     expect(agentIdx).toBeGreaterThan(installIdx);
@@ -228,7 +228,7 @@ export default function RootLayout({ children }) {
     expect(result).toBe(true);
 
     const written = mockWriteFile.mock.calls[0][1];
-    expect(written).toContain('import { AnteaterBar } from "@anteater/next"');
+    expect(written).toContain('import { AnteaterBar } from "next-anteater"');
     expect(written).toContain("<AnteaterBar />");
     // AnteaterBar should be before </body>
     const barIdx = written.indexOf("<AnteaterBar />");
@@ -237,7 +237,7 @@ export default function RootLayout({ children }) {
   });
 
   it("is idempotent — skips if already patched", async () => {
-    mockReadFile.mockResolvedValue(`import { AnteaterBar } from "@anteater/next";
+    mockReadFile.mockResolvedValue(`import { AnteaterBar } from "next-anteater";
 export default function RootLayout({ children }) {
   return <html><body>{children}<AnteaterBar /></body></html>;
 }`);
