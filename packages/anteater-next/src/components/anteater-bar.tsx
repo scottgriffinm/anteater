@@ -65,12 +65,7 @@ function PipelineProgress({
     <div
       style={{
         background: "#111",
-        border: "1px solid #333",
-        borderRadius: "12px",
         padding: "12px 16px",
-        marginBottom: "8px",
-        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
-        animation: "anteater-slide-up 0.25s ease-out",
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -219,40 +214,11 @@ export function AnteaterBar({
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",
-          gap: "8px",
         }}
       >
-        {/* Status/progress — slides up from the input bar */}
-        {isExpanded && isPipelineActive && (
-          <div style={{
-            width: `min(${360 + BUTTON_SIZE / 2}px, calc(100vw - 76px))`,
-            animation: "anteater-slide-up 0.25s ease-out",
-          }}>
-            <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
-          </div>
-        )}
-
-        {/* Error message */}
-        {isExpanded && status === "error" && error && (
-          <div
-            style={{
-              width: `min(${360 + BUTTON_SIZE / 2}px, calc(100vw - 76px))`,
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              borderRadius: "12px",
-              padding: "10px 16px",
-              fontSize: "13px",
-              color: "#ef4444",
-              animation: "anteater-slide-up 0.25s ease-out",
-            }}
-          >
-            {error}
-          </div>
-        )}
-
         {/* Input row + circle button */}
-        <div style={{ display: "flex", alignItems: "center", position: "relative" }}>
-          {/* Chat input — slides out to the left, tucks behind the circle */}
+        <div style={{ display: "flex", alignItems: "flex-end", position: "relative" }}>
+          {/* Combined input + status panel, tucks behind the circle */}
           <form
             onSubmit={handleSubmit}
             style={{
@@ -265,48 +231,80 @@ export function AnteaterBar({
           >
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
                 background: "#111",
                 border: "1px solid #333",
-                borderRadius: "24px",
-                padding: `8px ${BUTTON_SIZE / 2 + 12}px 8px 16px`,
+                borderRadius: isPipelineActive || (status === "error" && error)
+                  ? "16px 16px 24px 24px"
+                  : "24px",
                 boxShadow: "0 4px 24px rgba(0, 0, 0, 0.4)",
+                overflow: "hidden",
               }}
             >
-              <input
-                ref={inputRef}
-                type="text"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={
-                  status === "submitting"
-                    ? "Sending to Anteater..."
-                    : status === "error"
-                      ? error ?? "Something went wrong"
-                      : isPipelineActive
-                        ? STEP_LABELS[pipelineStep] + "..."
-                        : placeholder
-                }
-                disabled={status === "submitting" || isPipelineActive}
+              {/* Pipeline progress tab — inside the same container */}
+              {isPipelineActive && (
+                <div style={{ animation: "anteater-slide-up 0.25s ease-out" }}>
+                  <PipelineProgress currentStep={pipelineStep} steps={pipelineSteps} />
+                  <div style={{ height: "1px", background: "#333", margin: "0 12px" }} />
+                </div>
+              )}
+
+              {/* Error message — inside the same container */}
+              {status === "error" && error && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    fontSize: "13px",
+                    color: "#ef4444",
+                    animation: "anteater-slide-up 0.25s ease-out",
+                  }}
+                >
+                  {error}
+                  <div style={{ height: "1px", background: "#333", margin: "8px -4px 0" }} />
+                </div>
+              )}
+
+              {/* Input area */}
+              <div
                 style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: status === "error" ? "#ef4444" : isPipelineActive ? "#22c55e" : "#fff",
-                  fontSize: "14px",
-                  fontFamily: "inherit",
-                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  padding: `8px ${BUTTON_SIZE / 2 + 12}px 8px 16px`,
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && !isPipelineActive) {
-                    setIsExpanded(false);
-                    reset();
-                    setPrompt("");
+              >
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder={
+                    status === "submitting"
+                      ? "Sending to Anteater..."
+                      : status === "error"
+                        ? error ?? "Something went wrong"
+                        : isPipelineActive
+                          ? STEP_LABELS[pipelineStep] + "..."
+                          : placeholder
                   }
-                }}
-              />
+                  disabled={status === "submitting" || isPipelineActive}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: status === "error" ? "#ef4444" : isPipelineActive ? "#22c55e" : "#fff",
+                    fontSize: "14px",
+                    fontFamily: "inherit",
+                    minWidth: 0,
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && !isPipelineActive) {
+                      setIsExpanded(false);
+                      reset();
+                      setPrompt("");
+                    }
+                  }}
+                />
+              </div>
             </div>
           </form>
 
@@ -348,7 +346,7 @@ export function AnteaterBar({
             {canSend ? (
               <SendIcon size={20} color="#000" />
             ) : (
-              <AnteaterLogo size={28} color="#111" />
+              <AnteaterLogo size={34} color="#111" />
             )}
           </button>
         </div>
