@@ -401,9 +401,7 @@ export function AnteaterBar({
               {canSend ? (
                 <SendIcon size={20} color="#111" />
               ) : (
-                <span style={{ marginTop: "-3px" }}>
-                  <AnteaterLogo size={34} color="#111" />
-                </span>
+                <AnteaterLogo size={34} color="#111" />
               )}
             </button>
           </div>
