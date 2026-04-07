@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   title: "Anteater - Let users make your app.",
   description:
     "Describe changes in plain English. Anteater applies them to your live site via GitHub Actions and Vercel.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

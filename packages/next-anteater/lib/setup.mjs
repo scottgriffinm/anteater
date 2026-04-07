@@ -26,6 +26,25 @@ export async function main() {
   console.log(`  ${"\u2500".repeat(17)}`);
   blank();
 
+  // ─── Agent piping guide ────────────────────────────────────
+  if (!process.stdin.isTTY) {
+    console.log(`  ${bold("Piped input detected — Agent Guide")}`);
+    console.log(`  ${"─".repeat(40)}`);
+    console.log(`  Prompts (one per line, in order):`);
+    console.log(`    1. Anthropic API key`);
+    console.log(`    2. GitHub PAT (ghp_... or github_pat_...)`);
+    console.log(`    3. Use default paths? (Y/n)`);
+    console.log(`    4. Model (1=Sonnet 2=Opus 3=Opus1M 4=Haiku)`);
+    console.log(`    5. Permissions (1=Sandboxed 2=Unrestricted)`);
+    console.log(`    6. Confirm unrestricted? (y/N) — only if 5=2`);
+    console.log();
+    console.log(`  If paths=n, 2 extra prompts after #3:`);
+    console.log(`    3a. Allowed globs (comma-separated)`);
+    console.log(`    3b. Blocked globs (comma-separated)`);
+    console.log(`  ${"─".repeat(40)}`);
+    blank();
+  }
+
   // ─── Security notice ───────────────────────────────────────
   warn("SECURITY: Anteater lets users modify your app's code via AI.");
   info("Only expose it to trusted users in a sandboxed environment.");
@@ -81,35 +100,21 @@ export async function main() {
   }
   blank();
 
-  // ─── Step 2: GitHub access ──────────────────────────────────
+  // ─── Step 2: GitHub PAT ─────────────────────────────────────
   heading("Step 2 of 4 \u2014 GitHub Access");
 
-  let githubToken;
-  try {
-    githubToken = execSync("gh auth token", { encoding: "utf-8" }).trim();
-  } catch {
-    fail("GitHub CLI not authenticated. Run: gh auth login");
+  info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
+  blank();
+  info(`${bold("Create a Fine-grained token:")} ${cyan("https://github.com/settings/tokens?type=beta")}`);
+  info(`  1. Click ${bold("Generate new token")}`);
+  info(`  2. Select ${bold("Only select repositories")} \u2192 pick your repo`);
+  info(`  3. Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} \u2192 Read and write`);
+  info(`  4. Generate and copy the token`);
+  blank();
+  const githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
+  if (!githubToken) {
+    fail("A GitHub PAT is required.");
     process.exit(1);
-  }
-
-  // OAuth tokens (gho_*) expire in ~8 hours \u2014 not suitable for Vercel env
-  if (githubToken.startsWith("gho_")) {
-    warn("Your GitHub CLI token is a short-lived OAuth token (expires in ~8 hours).");
-    info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
-    blank();
-    info(`${bold("Create a Fine-grained token:")} ${cyan("https://github.com/settings/tokens?type=beta")}`);
-    info(`  1. Click ${bold("Generate new token")}`);
-    info(`  2. Select ${bold("Only select repositories")} → pick your repo`);
-    info(`  3. Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} → Read and write`);
-    info(`  4. Generate and copy the token`);
-    blank();
-    githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
-    if (!githubToken) {
-      fail("A GitHub PAT is required.");
-      process.exit(1);
-    }
-  } else {
-    ok("Using token from GitHub CLI");
   }
 
   const check = await spinner("Checking permissions", () =>
@@ -117,21 +122,10 @@ export async function main() {
   );
 
   if (!check.ok && check.missing.length > 0 && !check.missing.includes("unknown")) {
-    if (githubToken.startsWith("ghp_") || githubToken.startsWith("github_pat_")) {
-      fail("Token is missing required scopes: " + check.missing.join(", "));
-      info(`Create a new Fine-grained PAT at ${cyan("https://github.com/settings/tokens?type=beta")}`);
-      info(`Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} → Read and write`);
-      process.exit(1);
-    }
-    info("Upgrading token scopes...");
-    try {
-      execSync(`gh auth refresh --scopes ${check.missing.join(",")}`, { stdio: "inherit" });
-      githubToken = execSync("gh auth token", { encoding: "utf-8" }).trim();
-      ok("Token scopes updated");
-    } catch {
-      fail("Could not upgrade token. Run: gh auth refresh --scopes repo,workflow");
-      process.exit(1);
-    }
+    fail("Token is missing required scopes: " + check.missing.join(", "));
+    info(`Create a new Fine-grained PAT at ${cyan("https://github.com/settings/tokens?type=beta")}`);
+    info(`Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} \u2192 Read and write`);
+    process.exit(1);
   } else if (check.ok) {
     ok("Token has required permissions");
   }

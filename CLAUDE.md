@@ -8,12 +8,11 @@ Monorepo for the Anteater platform. Uses pnpm workspaces + Turborepo.
 
 If you see AnteaterBar imported in `apps/web`, **remove it immediately**.
 
-## CRITICAL — Package Names
+## CRITICAL — Package Name
 
-There is ONE npm package: **`next-anteater`**. That's it.
+There is ONE package name: **`next-anteater`**.
 
-- **`next-anteater`** = the npm package. Published to npm. Contains EVERYTHING: CLI, React components (AnteaterBar), hooks, types. This is what external users install.
-- **`@anteater/next`** = internal monorepo package only (`packages/anteater-next/`). NOT on npm. Only used by `apps/web` inside this monorepo. NEVER tell users to install this.
+- **`next-anteater`** = the package for CLI, React components (AnteaterBar), hooks, and types.
 
 When scaffolding code for external projects, ALL imports must use `next-anteater`:
 ```ts
@@ -21,22 +20,20 @@ import { AnteaterBar } from "next-anteater";
 import type { AnteaterConfig } from "next-anteater";
 ```
 
-NEVER scaffold imports from `@anteater/next` — that package does not exist on npm.
+NEVER scaffold any alternate package name for Anteater.
 
 ## Package Structure
 
 ```
 packages/
-  next-anteater/     ← THE npm package (name: "next-anteater")
+  next-anteater/     ← The Anteater package (name: "next-anteater")
     bin/             ← CLI entry points (setup, uninstall)
     lib/             ← CLI logic (setup.mjs, scaffold.mjs, etc.)
     src/             ← React components, hooks, types (TypeScript source)
     dist/            ← Compiled JS + .d.ts (built from src/)
-  anteater-next/     ← Internal monorepo package (name: "@anteater/next")
-    src/             ← Same components, used by apps/web only
 ```
 
-The two packages have nearly identical `src/` directories. `next-anteater` is what gets published; `anteater-next` is consumed by `apps/web` via pnpm workspace. When updating components/hooks/types, update **both** packages to keep them in sync.
+Keep `next-anteater` as the single source of truth for Anteater runtime behavior.
 
 ## Development
 
@@ -106,21 +103,24 @@ The CLI is the product. If it doesn't work, nothing works. Testing must go throu
 
 ### Piping Inputs to the Setup CLI
 
-The setup CLI is interactive but supports piped stdin. The inputs it expects **depend on the GitHub token type**:
+The setup CLI is interactive but supports piped stdin. When stdin is piped, the CLI prints an agent guide showing the exact prompt order.
 
-**If `gh auth token` returns an OAuth token (`gho_*`)** — CLI will ask for a PAT:
+The CLI always asks for a GitHub PAT — there is no token-type branching.
+
+**Standard flow (5 inputs):**
 ```bash
 printf '%s\n' "$ANTHROPIC_KEY" "$GITHUB_PAT" "Y" "4" "1" | npx next-anteater setup
 ```
 Inputs: (1) Anthropic key, (2) GitHub PAT, (3) accept default paths, (4) model choice, (5) permissions mode.
 
-**If `gh auth token` returns a classic PAT (`ghp_*`)** — CLI skips the PAT prompt:
+**If choosing Unrestricted (6 inputs):**
 ```bash
-printf '%s\n' "$ANTHROPIC_KEY" "Y" "4" "1" | npx next-anteater setup
+printf '%s\n' "$ANTHROPIC_KEY" "$GITHUB_PAT" "Y" "4" "2" "y" | npx next-anteater setup
 ```
-Inputs: (1) Anthropic key, (2) accept default paths, (3) model choice, (4) permissions mode.
+Inputs: same as above + (6) confirm unrestricted mode.
 
-**Check which case you're in BEFORE piping.** If you pipe the wrong number of inputs, answers shift and the CLI gets garbage for every subsequent prompt. The `gh auth token` prefix tells you: `gho_` = OAuth (5 inputs), `ghp_`/`github_pat_` = PAT (4 inputs).
+**If customizing paths (7+ inputs):**
+After answering "n" to default paths, two extra prompts appear: allowed globs and blocked globs.
 
 Model choices: 1=Sonnet, 2=Opus, 3=Opus 1M, 4=Haiku. Permission choices: 1=Sandboxed, 2=Unrestricted.
 
@@ -132,6 +132,14 @@ Model choices: 1=Sonnet, 2=Opus, 3=Opus 1M, 4=Haiku. Permission choices: 1=Sandb
 
 - One-liner: **"Let users make your app."**
 - Install command: `npx next-anteater setup`
+
+## Lessons Learned
+
+**Never dismiss test failures without proving they're pre-existing.** Always stash your changes, re-run tests on clean state, and compare. Don't hand-wave failures as "unrelated" — verify first, then explain.
+
+**Don't ask the user for API keys when installing Anteater on external projects.** ANTHROPIC_API_KEY and GITHUB_PAT are in the Anteater repo's root `.env`. Extract them silently with `grep` and pipe them to the CLI. The user shouldn't have to tell you what you already have access to.
+
+**Don't ask the user where their project is — find it yourself.** If they give you a project name, search the filesystem (`find` or `ls`). Only ask if you genuinely can't locate it after searching.
 
 ## Agent Guidelines
 
