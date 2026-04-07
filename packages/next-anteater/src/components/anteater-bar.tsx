@@ -7,7 +7,8 @@ import type { AnteaterBarProps, AnteaterRun } from "../types";
 const BUTTON_SIZE = 48;
 
 const STEP_LABEL: Record<string, string> = {
-  initializing: "Initializing",
+  queued: "Queued",
+  starting: "Starting",
   working: "Working",
   merging: "Merging",
   deploying: "Deploying",
@@ -79,9 +80,10 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
   const [, setTick] = useState(0);
   const [dotHovered, setDotHovered] = useState(false);
   const isError = run.step === "error";
-  const isActive = !isError;
+  const isQueued = run.step === "queued";
+  const isActive = !isError && !isQueued;
 
-  // Tick every second to update elapsed time
+  // Tick every second to update elapsed time (skip for queued runs)
   useEffect(() => {
     if (!isActive) return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
@@ -90,7 +92,9 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
 
   const statusText = isError
     ? `Failed: ${run.failedStep || "Unknown"}`
-    : `${STEP_LABEL[run.step] || run.step} \u00b7 ${formatElapsed(run.startedAt)}`;
+    : isQueued
+      ? `Queued \u00b7 #${run.queuePosition || 1}`
+      : `${STEP_LABEL[run.step] || run.step} \u00b7 ${formatElapsed(run.startedAt)}`;
 
   return (
     <div style={{ padding: "10px 14px" }}>
@@ -122,11 +126,11 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
         >
           {statusText}
         </span>
-        {isError ? (
+        {isError || isQueued ? (
           <span
             role="button"
             tabIndex={0}
-            title="Delete failed run"
+            title={isError ? "Delete failed run" : "Cancel queued run"}
             onClick={() => onDelete?.(run.requestId)}
             onKeyDown={(e) => { if (e.key === "Enter") onDelete?.(run.requestId); }}
             onMouseEnter={() => setDotHovered(true)}
@@ -140,19 +144,21 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
               flexShrink: 0,
               cursor: "pointer",
               borderRadius: "4px",
-              background: dotHovered ? "rgba(239, 68, 68, 0.15)" : "transparent",
+              background: dotHovered
+                ? isError ? "rgba(239, 68, 68, 0.15)" : "rgba(102, 102, 102, 0.15)"
+                : "transparent",
               transition: "background 0.15s ease",
             }}
           >
             {dotHovered ? (
-              <TrashIcon size={12} color="#ef4444" />
+              <TrashIcon size={12} color={isError ? "#ef4444" : "#888"} />
             ) : (
               <span
                 style={{
                   width: "8px",
                   height: "8px",
                   borderRadius: "50%",
-                  background: "#ef4444",
+                  background: isError ? "#ef4444" : "#666",
                 }}
               />
             )}
@@ -194,29 +200,21 @@ export function AnteaterBar({
     }
   }, [isExpanded]);
 
-  // Auto-expand if there are runs on mount (e.g. after refresh)
-  useEffect(() => {
-    if (runs.length > 0 && !isExpanded) {
-      setIsExpanded(true);
-    }
-  }, [runs.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!prompt.trim() || submitting) return;
+    const text = prompt.trim();
+    if (!text || submitting) return;
 
-    const result = await submit({
-      prompt: prompt.trim(),
+    setPrompt("");
+
+    await submit({
+      prompt: text,
       mode,
       branch,
       context: {
         pathname: typeof window !== "undefined" ? window.location.pathname : undefined,
       },
     });
-
-    if (result) {
-      setPrompt("");
-    }
   };
 
   const handleButtonClick = () => {
@@ -228,10 +226,8 @@ export function AnteaterBar({
       handleSubmit();
       return;
     }
-    if (runs.length === 0) {
-      setIsExpanded(false);
-      setPrompt("");
-    }
+    setIsExpanded(false);
+    setPrompt("");
   };
 
   const hasRuns = runs.length > 0;
@@ -261,6 +257,7 @@ export function AnteaterBar({
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",
+          pointerEvents: "none",
         }}
       >
         <div style={{ position: "relative" }}>
@@ -275,11 +272,12 @@ export function AnteaterBar({
                 zIndex: 0,
                 background: "#111",
                 border: "1px solid #333",
-                borderRadius: "12px 12px 12px 0",
+                borderRadius: "12px 12px 12px 12px",
                 borderBottom: "none",
                 overflow: "hidden",
                 animation: "anteater-slide-up 0.25s ease-out",
                 paddingBottom: `${BUTTON_SIZE + 4}px`,
+                pointerEvents: "auto",
               }}
             >
               {runs.map((run, i) => (
@@ -306,14 +304,21 @@ export function AnteaterBar({
 
           {/* Input bar + circle button */}
           <div style={{ position: "relative", zIndex: 1 }}>
+            <div
+              style={{
+                overflow: "hidden",
+                width: "min(420px, calc(100vw - 100px))",
+                marginRight: `${BUTTON_SIZE / 2}px`,
+                pointerEvents: isExpanded ? "auto" : "none",
+              }}
+            >
             <form
               onSubmit={handleSubmit}
               style={{
-                overflow: "hidden",
-                width: isExpanded ? "min(420px, calc(100vw - 100px))" : "0px",
+                borderRadius: showPanel ? "0 0 12px 12px" : "12px",
+                transform: isExpanded ? "translateX(0)" : "translateX(100%)",
                 opacity: isExpanded ? 1 : 0,
-                marginRight: `${BUTTON_SIZE / 2}px`,
-                transition: "width 0.3s ease, opacity 0.2s ease",
+                transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease",
               }}
             >
               <div
@@ -361,6 +366,7 @@ export function AnteaterBar({
                 />
               </div>
             </form>
+            </div>
 
             {/* Anteater circle button */}
             <button
@@ -380,6 +386,7 @@ export function AnteaterBar({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                pointerEvents: "auto",
                 boxShadow: canSend
                   ? "0 4px 24px rgba(255, 255, 255, 0.15), 0 4px 24px rgba(0, 0, 0, 0.4)"
                   : "0 4px 24px rgba(0, 0, 0, 0.3)",

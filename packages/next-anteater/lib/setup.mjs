@@ -1,8 +1,12 @@
 /**
  * anteater setup — Interactive CLI to install and configure Anteater.
  *
- * Core logic extracted from bin/setup-anteater.mjs so it can be
- * imported by tests without hitting the shebang line.
+ * Supports CLI flags for non-interactive use:
+ *   --anthropic-key <key>   Anthropic API key
+ *   --github-pat <pat>      GitHub Personal Access Token
+ *   --model <name>          sonnet | opus | opus-1m | haiku
+ *   --permissions <mode>    sandboxed | unrestricted
+ *   --yes / -y              Accept all defaults and confirmations
  */
 
 import { execSync } from "node:child_process";
@@ -20,28 +24,63 @@ import {
 
 const cwd = process.cwd();
 
+const MODEL_MAP = {
+  sonnet: "sonnet",
+  opus: "opus",
+  "opus-1m": "opus[1m]",
+  haiku: "haiku",
+};
+
+function parseFlags() {
+  const args = process.argv.slice(2);
+  const flags = {};
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case "--anthropic-key":
+        flags.anthropicKey = args[++i];
+        break;
+      case "--github-pat":
+        flags.githubPat = args[++i];
+        break;
+      case "--model":
+        flags.model = MODEL_MAP[args[++i]];
+        break;
+      case "--permissions":
+        flags.permissions = args[++i]; // "sandboxed" or "unrestricted"
+        break;
+      case "--yes":
+      case "-y":
+        flags.yes = true;
+        break;
+    }
+  }
+
+  return flags;
+}
+
 export async function main() {
+  const flags = parseFlags();
+
   console.log();
   console.log(`  ${bold("\u{1F41C} Anteater Setup")}`);
   console.log(`  ${"\u2500".repeat(17)}`);
   blank();
 
-  // ─── Agent piping guide ────────────────────────────────────
-  if (!process.stdin.isTTY) {
-    console.log(`  ${bold("Piped input detected — Agent Guide")}`);
-    console.log(`  ${"─".repeat(40)}`);
-    console.log(`  Prompts (one per line, in order):`);
-    console.log(`    1. Anthropic API key`);
-    console.log(`    2. GitHub PAT (ghp_... or github_pat_...)`);
-    console.log(`    3. Use default paths? (Y/n)`);
-    console.log(`    4. Model (1=Sonnet 2=Opus 3=Opus1M 4=Haiku)`);
-    console.log(`    5. Permissions (1=Sandboxed 2=Unrestricted)`);
-    console.log(`    6. Confirm unrestricted? (y/N) — only if 5=2`);
+  // ─── Non-interactive hint ──────────────────────────────────
+  if (!process.stdin.isTTY && !flags.anthropicKey) {
+    console.log(`  ${bold("Tip: use CLI flags for non-interactive setup:")}`);
+    console.log(`  ${"─".repeat(52)}`);
+    console.log(`  npx next-anteater setup \\`);
+    console.log(`    --anthropic-key <key> \\`);
+    console.log(`    --github-pat <pat> \\`);
+    console.log(`    --model sonnet \\`);
+    console.log(`    --permissions unrestricted \\`);
+    console.log(`    --yes`);
     console.log();
-    console.log(`  If paths=n, 2 extra prompts after #3:`);
-    console.log(`    3a. Allowed globs (comma-separated)`);
-    console.log(`    3b. Blocked globs (comma-separated)`);
-    console.log(`  ${"─".repeat(40)}`);
+    console.log(`  Models: sonnet, opus, opus-1m, haiku`);
+    console.log(`  Permissions: sandboxed, unrestricted`);
+    console.log(`  ${"─".repeat(52)}`);
     blank();
   }
 
@@ -87,34 +126,48 @@ export async function main() {
 
   // ─── Step 1: Anthropic API key ──────────────────────────────
   heading("Step 1 of 4 \u2014 AI Provider");
-  info(`Get a key at ${cyan("https://console.anthropic.com/keys")}`);
-  blank();
 
   let anthropicKey;
-  while (true) {
-    anthropicKey = await ask("Anthropic API key:", { mask: true });
-    if (!anthropicKey) { warn("Required."); continue; }
+  if (flags.anthropicKey) {
+    anthropicKey = flags.anthropicKey;
     const valid = await spinner("Validating", () => validateAnthropicKey(anthropicKey));
-    if (valid) break;
-    fail("Invalid key. Check that it starts with sk-ant- and try again.");
+    if (!valid) {
+      fail("Invalid --anthropic-key. Check that it starts with sk-ant-.");
+      process.exit(1);
+    }
+  } else {
+    info(`Get a key at ${cyan("https://console.anthropic.com/keys")}`);
+    blank();
+    while (true) {
+      anthropicKey = await ask("Anthropic API key:", { mask: true });
+      if (!anthropicKey) { warn("Required."); continue; }
+      const valid = await spinner("Validating", () => validateAnthropicKey(anthropicKey));
+      if (valid) break;
+      fail("Invalid key. Check that it starts with sk-ant- and try again.");
+    }
   }
   blank();
 
   // ─── Step 2: GitHub PAT ─────────────────────────────────────
   heading("Step 2 of 4 \u2014 GitHub Access");
 
-  info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
-  blank();
-  info(`${bold("Create a Fine-grained token:")} ${cyan("https://github.com/settings/tokens?type=beta")}`);
-  info(`  1. Click ${bold("Generate new token")}`);
-  info(`  2. Select ${bold("Only select repositories")} \u2192 pick your repo`);
-  info(`  3. Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} \u2192 Read and write`);
-  info(`  4. Generate and copy the token`);
-  blank();
-  const githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
-  if (!githubToken) {
-    fail("A GitHub PAT is required.");
-    process.exit(1);
+  let githubToken;
+  if (flags.githubPat) {
+    githubToken = flags.githubPat;
+  } else {
+    info("Anteater needs a long-lived Personal Access Token (PAT) for the deployed API route.");
+    blank();
+    info(`${bold("Create a Fine-grained token:")} ${cyan("https://github.com/settings/tokens?type=beta")}`);
+    info(`  1. Click ${bold("Generate new token")}`);
+    info(`  2. Select ${bold("Only select repositories")} \u2192 pick your repo`);
+    info(`  3. Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} \u2192 Read and write`);
+    info(`  4. Generate and copy the token`);
+    blank();
+    githubToken = await ask("Paste your GitHub PAT (ghp_... or github_pat_...):");
+    if (!githubToken) {
+      fail("A GitHub PAT is required.");
+      process.exit(1);
+    }
   }
 
   const check = await spinner("Checking permissions", () =>
@@ -149,56 +202,89 @@ export async function main() {
   console.log(`  ${red("Blocked:")} ${defaultBlocked.join(", ")}`);
   blank();
 
-  const useDefaults = await confirm("Use these defaults?");
   let allowedGlobs = defaultAllowed;
   let blockedGlobs = defaultBlocked;
 
-  if (!useDefaults) {
-    const customAllowed = await ask("Allowed globs (comma-separated):");
-    const customBlocked = await ask("Blocked globs (comma-separated):");
-    if (customAllowed) allowedGlobs = customAllowed.split(",").map((s) => s.trim());
-    if (customBlocked) blockedGlobs = customBlocked.split(",").map((s) => s.trim());
+  if (flags.yes) {
+    ok("Using default paths (--yes)");
+  } else {
+    const useDefaults = await confirm("Use these defaults?");
+    if (!useDefaults) {
+      const customAllowed = await ask("Allowed globs (comma-separated):");
+      const customBlocked = await ask("Blocked globs (comma-separated):");
+      if (customAllowed) allowedGlobs = customAllowed.split(",").map((s) => s.trim());
+      if (customBlocked) blockedGlobs = customBlocked.split(",").map((s) => s.trim());
+    }
   }
   blank();
 
   // ─── Step 4: Agent configuration ─────────────────────────────
   heading("Step 4 of 4 \u2014 Agent Configuration");
 
-  const model = await select("Select AI model:", [
-    { label: "Sonnet (recommended)", hint: "fast, cost-effective, great for most changes", value: "sonnet" },
-    { label: "Opus", hint: "most capable, higher cost", value: "opus" },
-    { label: "Opus 1M", hint: "Opus with extended context (1M tokens)", value: "opus[1m]" },
-    { label: "Haiku", hint: "fastest, lowest cost, best for simple changes", value: "haiku" },
-  ]);
-  ok(`Model: ${model}`);
+  let model;
+  if (flags.model) {
+    model = flags.model;
+    ok(`Model: ${model} (--model)`);
+  } else {
+    model = await select("Select AI model:", [
+      { label: "Sonnet (recommended)", hint: "fast, cost-effective, great for most changes", value: "sonnet" },
+      { label: "Opus", hint: "most capable, higher cost", value: "opus" },
+      { label: "Opus 1M", hint: "Opus with extended context (1M tokens)", value: "opus[1m]" },
+      { label: "Haiku", hint: "fastest, lowest cost, best for simple changes", value: "haiku" },
+    ]);
+    ok(`Model: ${model}`);
+  }
   blank();
 
-  let permissionsMode = await select("Select agent permissions mode:", [
-    { label: "Sandboxed (recommended)", hint: "full local access, no internet or external services", value: "sandboxed" },
-    { label: "Unrestricted", hint: "full access including web, GitHub CLI, Vercel, and all MCP tools", value: "unrestricted" },
-  ]);
-
-  if (permissionsMode === "unrestricted") {
-    blank();
-    warn("Unrestricted mode grants the AI agent full access to:");
-    info("  - Internet (web fetches, searches, curl)");
-    info("  - GitHub CLI (push, PR creation, issue management)");
-    info("  - Vercel CLI (deployments, env vars)");
-    info("  - All MCP tools (browser automation, etc.)");
-    info("  - File deletion and system commands");
-    blank();
-    warn("The agent will run with bypassPermissions \u2014 no confirmation prompts.");
-    warn("Only use this if you trust the prompts your users will submit.");
-    blank();
-    const confirmed = await confirm("Confirm unrestricted mode?", false);
-    if (!confirmed) {
-      permissionsMode = "sandboxed";
-      ok("Falling back to Sandboxed mode");
+  let permissionsMode;
+  if (flags.permissions) {
+    permissionsMode = flags.permissions;
+    if (permissionsMode === "unrestricted" && !flags.yes) {
+      warn("Unrestricted mode grants the AI agent full access to:");
+      info("  - Internet (web fetches, searches, curl)");
+      info("  - GitHub CLI (push, PR creation, issue management)");
+      info("  - Vercel CLI (deployments, env vars)");
+      info("  - All MCP tools (browser automation, etc.)");
+      info("  - File deletion and system commands");
+      blank();
+      const confirmed = await confirm("Confirm unrestricted mode?", false);
+      if (!confirmed) {
+        permissionsMode = "sandboxed";
+        ok("Falling back to Sandboxed mode");
+      } else {
+        ok("Unrestricted mode confirmed");
+      }
     } else {
-      ok("Unrestricted mode confirmed");
+      ok(`Permissions: ${permissionsMode} (--permissions)`);
     }
   } else {
-    ok("Sandboxed mode \u2014 agent cannot access internet or external services");
+    permissionsMode = await select("Select agent permissions mode:", [
+      { label: "Sandboxed (recommended)", hint: "full local access, no internet or external services", value: "sandboxed" },
+      { label: "Unrestricted", hint: "full access including web, GitHub CLI, Vercel, and all MCP tools", value: "unrestricted" },
+    ]);
+
+    if (permissionsMode === "unrestricted") {
+      blank();
+      warn("Unrestricted mode grants the AI agent full access to:");
+      info("  - Internet (web fetches, searches, curl)");
+      info("  - GitHub CLI (push, PR creation, issue management)");
+      info("  - Vercel CLI (deployments, env vars)");
+      info("  - All MCP tools (browser automation, etc.)");
+      info("  - File deletion and system commands");
+      blank();
+      warn("The agent will run with bypassPermissions \u2014 no confirmation prompts.");
+      warn("Only use this if you trust the prompts your users will submit.");
+      blank();
+      const confirmed = flags.yes || await confirm("Confirm unrestricted mode?", false);
+      if (!confirmed) {
+        permissionsMode = "sandboxed";
+        ok("Falling back to Sandboxed mode");
+      } else {
+        ok("Unrestricted mode confirmed");
+      }
+    } else {
+      ok("Sandboxed mode \u2014 agent cannot access internet or external services");
+    }
   }
   blank();
 

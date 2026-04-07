@@ -5,9 +5,9 @@ import type { AnteaterRequest, AnteaterResponse, AnteaterStatusResponse } from "
 
 type Status = "idle" | "submitting" | "success" | "error";
 
-export type PipelineStep = "initializing" | "working" | "merging" | "deploying";
+export type PipelineStep = "queued" | "starting" | "working" | "merging" | "deploying";
 
-const PIPELINE_STEPS: PipelineStep[] = ["initializing", "working", "merging", "deploying"];
+const PIPELINE_STEPS: PipelineStep[] = ["queued", "starting", "working", "merging", "deploying"];
 
 const POLL_INTERVAL = 3000;
 const POLL_TIMEOUT = 6 * 60 * 60 * 1000; // 6 hours
@@ -50,7 +50,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
     const branch = branchRef.current;
     if (!branch) return;
 
-    // Timeout after 5 minutes of polling
+    // Timeout after 6 hours of polling
     const elapsed = Date.now() - pollingStartRef.current;
     if (pollingStartRef.current > 0 && elapsed > POLL_TIMEOUT) {
       console.error(`[anteater] Polling timed out after ${Math.round(elapsed / 1000)}s`, { branch });
@@ -68,6 +68,8 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
 
       if (!res.ok) {
         console.warn(`[anteater] Poll failed: ${res.status} ${res.statusText}`, { branch });
+        setPipelineStep("starting");
+        setError("Status check unavailable, retrying...");
         return;
       }
 
@@ -89,6 +91,10 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
         return;
       }
 
+      if (data.completed) {
+        stopPolling();
+      }
+
       // Detect new deployment: if deployment ID changed, new code is live
       if (
         data.deploymentId &&
@@ -101,8 +107,11 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
       }
 
       setPipelineStep(data.step);
+      setError(null);
     } catch (err) {
       console.warn(`[anteater] Poll network error (will retry):`, err);
+      setPipelineStep("starting");
+      setError("Status check unavailable, retrying...");
     }
   }, [apiEndpoint, stopPolling, triggerReload]);
 
@@ -120,7 +129,7 @@ export function useAnteater(apiEndpoint: string = "/api/anteater") {
       setStatus("submitting");
       setError(null);
       setResponse(null);
-      setPipelineStep("initializing");
+      setPipelineStep("starting");
 
       try {
         const res = await fetch(apiEndpoint, {
