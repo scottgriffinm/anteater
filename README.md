@@ -4,8 +4,6 @@
 
 # Anteater
 
-Let users make your app.
-
 Anteater adds a prompt bar to your Next.js app. When a user describes a change, Claude edits the code, opens a PR, and redeploys automatically (all via Github actions).
 
 ## Security Warning
