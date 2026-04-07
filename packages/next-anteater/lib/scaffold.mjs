@@ -15,6 +15,217 @@ async function writeIfNotExists(path, content) {
   }
 }
 
+async function patchRunsRouteDeleteIfMissing(path, isTypeScript) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    if (existing.includes("export async function DELETE(")) {
+      return false;
+    }
+    const patched = `${existing.trimEnd()}\n\n${buildRunsDeleteHandler(isTypeScript)}\n`;
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function patchApiRouteMutationGuardIfMissing(path) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    if (existing.includes("Same-origin guard for mutating Anteater requests")) {
+      return false;
+    }
+
+    const guardBlock = [
+      "    // Same-origin guard for mutating Anteater requests (no app auth integration required)",
+      "    const requestOrigin = request.nextUrl.origin;",
+      '    const fetchSite = request.headers.get("sec-fetch-site");',
+      '    const origin = request.headers.get("origin");',
+      '    const referer = request.headers.get("referer");',
+      "    const hasMatchingOrigin = origin === requestOrigin;",
+      "    const hasMatchingReferer = (() => {",
+      "      if (!referer) return false;",
+      "      try {",
+      "        return new URL(referer).origin === requestOrigin;",
+      "      } catch {",
+      "        return false;",
+      "      }",
+      "    })();",
+      '    const hasSameOriginBrowserSignal = fetchSite === "same-origin";',
+      "    const hasValidSameOriginSignal = hasSameOriginBrowserSignal || hasMatchingOrigin || hasMatchingReferer;",
+      "    const secret = process.env.ANTEATER_SECRET;",
+      '    const hasValidSecret = !!secret && request.headers.get("x-anteater-secret") === secret;',
+      "    if (!hasValidSameOriginSignal && !hasValidSecret) {",
+      "      return NextResponse.json(",
+      '        { requestId: "", branch: "", status: "error", error: "Forbidden" },',
+      "        { status: 403 }",
+      "      );",
+      "    }",
+      "",
+    ].join("\n");
+
+    const contentTypeBlock = [
+      '    const contentType = request.headers.get("content-type") || "";',
+      '    if (!contentType.toLowerCase().includes("application/json")) {',
+      "      return NextResponse.json(",
+      '        { requestId: "", branch: "", status: "error", error: "Content-Type must be application/json" },',
+      "        { status: 415 }",
+      "      );",
+      "    }",
+      "",
+    ].join("\n");
+
+    let patched = existing;
+
+    patched = patched.replace(
+      "  try {\n    const body",
+      `  try {\n${contentTypeBlock}    const body`,
+    );
+
+    const oldAuthPattern = /    \/\/ Auth: sec-fetch-site for same-origin \(AnteaterBar\), x-anteater-secret for external[\s\S]*?    const repo = getRepo\(\);/;
+    if (oldAuthPattern.test(patched)) {
+      patched = patched.replace(oldAuthPattern, `${guardBlock}    const repo = getRepo();`);
+    } else {
+      patched = patched.replace(
+        "    const repo = getRepo();",
+        `${guardBlock}    const repo = getRepo();`,
+      );
+    }
+
+    if (patched === existing) {
+      return false;
+    }
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function patchRunsRouteMutationGuardIfMissing(path) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    if (
+      existing.includes("Same-origin guard for mutating runs endpoint") &&
+      existing.includes("export async function DELETE(request") &&
+      existing.indexOf("Same-origin guard for mutating runs endpoint") >
+        existing.indexOf("export async function DELETE(request")
+    ) {
+      return false;
+    }
+
+    const guardBlock = [
+      "  // Same-origin guard for mutating runs endpoint (no app auth integration required)",
+      "  const requestOrigin = new URL(request.url).origin;",
+      '  const fetchSite = request.headers.get("sec-fetch-site");',
+      '  const origin = request.headers.get("origin");',
+      '  const referer = request.headers.get("referer");',
+      "  const hasMatchingOrigin = origin === requestOrigin;",
+      "  const hasMatchingReferer = (() => {",
+      "    if (!referer) return false;",
+      "    try {",
+      "      return new URL(referer).origin === requestOrigin;",
+      "    } catch {",
+      "      return false;",
+      "    }",
+      "  })();",
+      '  const hasSameOriginBrowserSignal = fetchSite === "same-origin";',
+      "  const hasValidSameOriginSignal = hasSameOriginBrowserSignal || hasMatchingOrigin || hasMatchingReferer;",
+      "  const secret = process.env.ANTEATER_SECRET;",
+      '  const hasValidSecret = !!secret && request.headers.get("x-anteater-secret") === secret;',
+      "  if (!hasValidSameOriginSignal && !hasValidSecret) {",
+      '    return NextResponse.json({ error: "Forbidden" }, { status: 403 });',
+      "  }",
+      "",
+    ].join("\n");
+
+    const deleteFnPattern =
+      /(export async function DELETE\(request[^\n]*\) \{[\s\S]*?if \(!requestId\) \{[\s\S]*?\n  \}\n\s*)/;
+    let patched = existing;
+
+    if (deleteFnPattern.test(existing)) {
+      patched = existing.replace(deleteFnPattern, `$1${guardBlock}`);
+    } else {
+      return false;
+    }
+
+    // Clean up buggy older patch where guard was accidentally inserted in GET.
+    const getGuardPattern =
+      /(export async function GET\(\) \{[\s\S]*?)\n  \/\/ Same-origin guard for mutating runs endpoint[\s\S]*?  const gh = \(url/g;
+    if (getGuardPattern.test(patched)) {
+      patched = patched.replace(getGuardPattern, "$1\n  const gh = (url");
+    }
+
+    if (patched === existing) {
+      return false;
+    }
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function patchRunsRouteFailedTtlIfMissing(path) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    if (existing.includes("failedCutoffMs")) {
+      return false;
+    }
+
+    const replacement = [
+      "    // Sort newest first, cap at 5",
+      "    // Drop stale failed runs (>1h) so old errors don't clutter the bar",
+      "    const failedCutoffMs = 60 * 60 * 1000;",
+      "    const freshRuns = runs.filter((r) => {",
+      '      if (r.step !== "error") return true;',
+      "      const startedAtMs = new Date(r.startedAt).getTime();",
+      "      if (Number.isNaN(startedAtMs)) return true;",
+      "      return Date.now() - startedAtMs <= failedCutoffMs;",
+      "    });",
+      "",
+      "    freshRuns.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());",
+      "",
+      '    return NextResponse.json' + (existing.includes("<AnteaterRunsResponse>") ? "<AnteaterRunsResponse>" : "") + "(",
+      "      { runs: freshRuns.slice(0, 5), deploymentId: process.env.VERCEL_DEPLOYMENT_ID }",
+      "    );",
+    ].join("\n");
+
+    const sortAndReturnPattern =
+      /    \/\/ Sort newest first, cap at 5[\s\S]*?    return NextResponse\.json(?:<AnteaterRunsResponse>)?\([\s\S]*?\n    \);/;
+    if (!sortAndReturnPattern.test(existing)) {
+      return false;
+    }
+
+    const patched = existing.replace(sortAndReturnPattern, replacement);
+    if (patched === existing) {
+      return false;
+    }
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function patchWorkflowModelInputIfPresent(path) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    const modelInputPattern = /^\s*model:\s*".*"\s*\r?\n/m;
+    if (!modelInputPattern.test(existing)) {
+      return false;
+    }
+    const patched = existing.replace(modelInputPattern, "");
+    if (patched === existing) {
+      return false;
+    }
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Generate anteater.config.ts
  */
@@ -107,6 +318,14 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   // --- POST handler ---
   add("export async function POST(request" + (TS ? ": NextRequest" : "") + ") {");
   add("  try {");
+  add('    const contentType = request.headers.get("content-type") || "";');
+  add('    if (!contentType.toLowerCase().includes("application/json")) {');
+  add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('        { requestId: "", branch: "", status: "error", error: "Content-Type must be application/json" },');
+  add("        { status: 415 }");
+  add("      );");
+  add("    }");
+  add("");
   add("    const body" + (TS ? ": AnteaterRequest" : "") + " = await request.json();");
   add("");
   add("    if (!body.prompt?.trim()) {");
@@ -116,20 +335,29 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("      );");
   add("    }");
   add("");
-  add("    // Auth: sec-fetch-site for same-origin (AnteaterBar), x-anteater-secret for external");
-  add("    const secret = process.env.ANTEATER_SECRET;");
-  add("    if (secret) {");
-  add('      const fetchSite = request.headers.get("sec-fetch-site");');
-  add('      const isSameOrigin = fetchSite === "same-origin";');
-  add("      if (!isSameOrigin) {");
-  add('        const authHeader = request.headers.get("x-anteater-secret");');
-  add("        if (authHeader !== secret) {");
-  add("          return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
-  add('            { requestId: "", branch: "", status: "error", error: "Unauthorized" },');
-  add("            { status: 401 }");
-  add("          );");
-  add("        }");
+  add("    // Same-origin guard for mutating Anteater requests (no app auth integration required)");
+  add("    const requestOrigin = request.nextUrl.origin;");
+  add('    const fetchSite = request.headers.get("sec-fetch-site");');
+  add('    const origin = request.headers.get("origin");');
+  add('    const referer = request.headers.get("referer");');
+  add("    const hasMatchingOrigin = origin === requestOrigin;");
+  add("    const hasMatchingReferer = (() => {");
+  add("      if (!referer) return false;");
+  add("      try {");
+  add("        return new URL(referer).origin === requestOrigin;");
+  add("      } catch {");
+  add("        return false;");
   add("      }");
+  add("    })();");
+  add('    const hasSameOriginBrowserSignal = fetchSite === "same-origin";');
+  add("    const hasValidSameOriginSignal = hasSameOriginBrowserSignal || hasMatchingOrigin || hasMatchingReferer;");
+  add("    const secret = process.env.ANTEATER_SECRET;");
+  add('    const hasValidSecret = !!secret && request.headers.get("x-anteater-secret") === secret;');
+  add("    if (!hasValidSameOriginSignal && !hasValidSecret) {");
+  add("      return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('        { requestId: "", branch: "", status: "error", error: "Forbidden" },');
+  add("        { status: 403 }");
+  add("      );");
   add("    }");
   add("");
   add("    const repo = getRepo();");
@@ -381,7 +609,6 @@ jobs:
 
             IMPORTANT: Always verify your changes compile by running the build command.
           anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
-          model: "${model}"
           claude_args: "--allowedTools Edit,Read,Write,Bash,Glob,Grep --max-turns 25"
 
       - name: Check for changes
@@ -595,10 +822,19 @@ export function generateRunsRoute({ isTypeScript }) {
   add("    }");
   add("");
   add("    // Sort newest first, cap at 5");
-  add("    runs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());");
+  add("    // Drop stale failed runs (>1h) so old errors don't clutter the bar");
+  add("    const failedCutoffMs = 60 * 60 * 1000;");
+  add("    const freshRuns = runs.filter((r) => {");
+  add("      if (r.step !== \"error\") return true;");
+  add("      const startedAtMs = new Date(r.startedAt).getTime();");
+  add("      if (Number.isNaN(startedAtMs)) return true;");
+  add("      return Date.now() - startedAtMs <= failedCutoffMs;");
+  add("    });");
+  add("");
+  add("    freshRuns.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());");
   add("");
   add("    return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "(");
-  add("      { runs: runs.slice(0, 5), deploymentId: process.env.VERCEL_DEPLOYMENT_ID }");
+  add("      { runs: freshRuns.slice(0, 5), deploymentId: process.env.VERCEL_DEPLOYMENT_ID }");
   add("    );");
   add("  } catch {");
   add("    return emptyResponse();");
@@ -606,7 +842,20 @@ export function generateRunsRoute({ isTypeScript }) {
   add("}");
   add("");
 
-  // --- DELETE handler: delete a failed workflow run by requestId ---
+  for (const line of buildRunsDeleteHandlerLines(TS)) add(line);
+
+  return {
+    filename: `route.${ext}`,
+    content: lines.join("\n") + "\n",
+  };
+}
+
+function buildRunsDeleteHandlerLines(TS) {
+  const lines = [];
+  const add = (s) => lines.push(s);
+
+  add("");
+  add("// --- DELETE handler: delete a failed workflow run by requestId ---");
   add("export async function DELETE(request" + (TS ? ": Request" : "") + ") {");
   add("  const repo = getRepo();");
   add("  const token = process.env.GITHUB_TOKEN;");
@@ -618,6 +867,28 @@ export function generateRunsRoute({ isTypeScript }) {
   add("  const requestId = searchParams.get(\"requestId\");");
   add("  if (!requestId) {");
   add("    return NextResponse.json({ error: \"requestId is required\" }, { status: 400 });");
+  add("  }");
+  add("");
+  add("  // Same-origin guard for mutating runs endpoint (no app auth integration required)");
+  add("  const requestOrigin = new URL(request.url).origin;");
+  add('  const fetchSite = request.headers.get("sec-fetch-site");');
+  add('  const origin = request.headers.get("origin");');
+  add('  const referer = request.headers.get("referer");');
+  add("  const hasMatchingOrigin = origin === requestOrigin;");
+  add("  const hasMatchingReferer = (() => {");
+  add("    if (!referer) return false;");
+  add("    try {");
+  add("      return new URL(referer).origin === requestOrigin;");
+  add("    } catch {");
+  add("      return false;");
+  add("    }");
+  add("  })();");
+  add('  const hasSameOriginBrowserSignal = fetchSite === "same-origin";');
+  add("  const hasValidSameOriginSignal = hasSameOriginBrowserSignal || hasMatchingOrigin || hasMatchingReferer;");
+  add("  const secret = process.env.ANTEATER_SECRET;");
+  add('  const hasValidSecret = !!secret && request.headers.get("x-anteater-secret") === secret;');
+  add("  if (!hasValidSameOriginSignal && !hasValidSecret) {");
+  add('    return NextResponse.json({ error: "Forbidden" }, { status: 403 });');
   add("  }");
   add("");
   add("  const gh = (url" + (TS ? ": string" : "") + ", options" + (TS ? "?: RequestInit" : "") + ") =>");
@@ -670,10 +941,11 @@ export function generateRunsRoute({ isTypeScript }) {
   add("  }");
   add("}");
 
-  return {
-    filename: `route.${ext}`,
-    content: lines.join("\n") + "\n",
-  };
+  return lines;
+}
+
+function buildRunsDeleteHandler(isTypeScript) {
+  return buildRunsDeleteHandlerLines(isTypeScript).join("\n");
 }
 
 /**
@@ -850,22 +1122,38 @@ export async function scaffoldFiles(cwd, options) {
   const route = generateApiRoute(options);
   const routeDir = options.isAppRouter ? "app/api/anteater" : "pages/api/anteater";
   const routePath = join(cwd, routeDir, route.filename);
-  if (await writeIfNotExists(routePath, route.content)) {
+  const createdRoute = await writeIfNotExists(routePath, route.content);
+  if (createdRoute) {
     results.push(join(routeDir, route.filename));
+  } else if (await patchApiRouteMutationGuardIfMissing(routePath)) {
+    results.push(`${join(routeDir, route.filename)} (patched same-origin guard)`);
   }
 
   // Runs API route (multi-run discovery)
   const runsRoute = generateRunsRoute(options);
   const runsDir = options.isAppRouter ? "app/api/anteater/runs" : "pages/api/anteater/runs";
   const runsPath = join(cwd, runsDir, runsRoute.filename);
-  if (await writeIfNotExists(runsPath, runsRoute.content)) {
+  const createdRunsRoute = await writeIfNotExists(runsPath, runsRoute.content);
+  if (createdRunsRoute) {
     results.push(join(runsDir, runsRoute.filename));
+  } else {
+    if (await patchRunsRouteDeleteIfMissing(runsPath, options.isTypeScript)) {
+      results.push(`${join(runsDir, runsRoute.filename)} (patched DELETE handler)`);
+    }
+    if (await patchRunsRouteMutationGuardIfMissing(runsPath)) {
+      results.push(`${join(runsDir, runsRoute.filename)} (patched same-origin guard)`);
+    }
+    if (await patchRunsRouteFailedTtlIfMissing(runsPath)) {
+      results.push(`${join(runsDir, runsRoute.filename)} (patched failed-run TTL)`);
+    }
   }
 
   // GitHub Action workflow
   const workflowPath = join(cwd, ".github/workflows/anteater.yml");
   if (await writeIfNotExists(workflowPath, generateWorkflow(options))) {
     results.push(".github/workflows/anteater.yml");
+  } else if (await patchWorkflowModelInputIfPresent(workflowPath)) {
+    results.push(".github/workflows/anteater.yml (patched deprecated model input)");
   }
 
   // Claude Code agent settings (always overwrite — reflects current choices)
