@@ -34,11 +34,11 @@ export interface AnteaterRequest {
 export interface AnteaterResponse {
   requestId: string;
   branch: string;
-  status: "queued" | "error";
+  status: "queued" | "busy" | "error";
   error?: string;
 }
 
-export type AnteaterStep = "initializing" | "working" | "merging" | "deploying" | "error";
+export type AnteaterStep = "queued" | "starting" | "working" | "merging" | "deploying" | "error";
 
 export interface AnteaterStatusResponse {
   /** Current pipeline step */
@@ -47,7 +47,7 @@ export interface AnteaterStatusResponse {
   completed: boolean;
   /** Error message if failed */
   error?: string;
-  /** Vercel deployment ID — changes when new code is deployed */
+  /** Vercel deployment ID for the current deployment instance */
   deploymentId?: string;
 }
 
@@ -62,12 +62,15 @@ export interface AnteaterRun {
   startedAt: string;
   /** Name of the step that failed (only set when step === "error") */
   failedStep?: string;
+  /** Position in the queue (only set when step === "queued") */
+  queuePosition?: number;
 }
 
 /** Response from GET /api/anteater/runs */
 export interface AnteaterRunsResponse {
   runs: AnteaterRun[];
   deploymentId?: string;
+  error?: string;
 }
 
 export interface AnteaterBarProps {

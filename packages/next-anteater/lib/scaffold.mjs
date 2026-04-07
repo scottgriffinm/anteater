@@ -226,6 +226,72 @@ async function patchWorkflowModelInputIfPresent(path) {
   }
 }
 
+async function patchRunsRouteDeploymentCompletionIfNeeded(path) {
+  try {
+    const existing = await readFile(path, "utf-8");
+    if (existing.includes("merge_commit_sha")) {
+      return false;
+    }
+
+    const oldBlockPattern =
+      /if \(pr\?\.merged_at\) \{\r?\n\s*const mergedAgo = Date\.now\(\) - new Date\(pr\.merged_at\)\.getTime\(\);\r?\n\s*if \(mergedAgo > 300000\) continue; \/\/ >5 min ago, done\r?\n\s*runs\.push\(\{ \.\.\.base, step: "deploying" \}\);\r?\n\s*continue;\r?\n\s*\}/;
+
+    if (!oldBlockPattern.test(existing)) {
+      return false;
+    }
+
+    const replacementBlock = `if (pr?.merged_at) {
+        const mergedAtMs = new Date(pr.merged_at).getTime();
+        if (!Number.isFinite(mergedAtMs)) continue;
+
+        // Detect deploy completion using the merge commit deployment state.
+        const mergeSha = pr.merge_commit_sha;
+        if (mergeSha) {
+          try {
+            const depRes = await gh(
+              \`https://api.github.com/repos/\${repo}/deployments?sha=\${mergeSha}&per_page=1\`
+            );
+            if (depRes.ok) {
+              const deployments = await depRes.json();
+              if (deployments.length > 0) {
+                const depId = deployments[0]?.id;
+                if (depId) {
+                  const depStatusRes = await gh(
+                    \`https://api.github.com/repos/\${repo}/deployments/\${depId}/statuses?per_page=1\`
+                  );
+                  if (depStatusRes.ok) {
+                    const depStatuses = await depStatusRes.json();
+                    const depState = depStatuses?.[0]?.state;
+                    if (depState === "success") continue;
+                    if (depState === "failure" || depState === "error" || depState === "inactive") {
+                      runs.push({ ...base, step: "error", failedStep: "Deployment failed" });
+                      continue;
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            // Fall through to heuristic below.
+          }
+        }
+
+        // PR merged — if deploy hasn't succeeded or failed, it's deploying
+        runs.push({ ...base, step: "deploying" });
+        continue;
+      }`;
+
+    const patched = existing.replace(oldBlockPattern, replacementBlock);
+    if (patched === existing) {
+      return false;
+    }
+    await writeFile(path, patched, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Generate anteater.config.ts
  */
@@ -369,6 +435,32 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("      );");
   add("    }");
   add("");
+  add("    // Gate: only one workflow at a time — return busy if a run is active");
+  add("    const gateRes = await fetch(");
+  add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=10`,");
+  add("      {");
+  add("        headers: {");
+  add("          Authorization: `Bearer ${token}`,");
+  add('          Accept: "application/vnd.github+json",');
+  add('          "X-GitHub-Api-Version": "2022-11-28",');
+  add("        },");
+  add('        cache: "no-store",');
+  add("      }");
+  add("    );");
+  add("    if (gateRes.ok) {");
+  add("      const gateData = await gateRes.json();");
+  add("      const activeRun = (gateData.workflow_runs || []).find(");
+  add("        (r" + (TS ? ": any" : "") + ") =>");
+  add("          r.display_title?.startsWith(\"anteater [\") &&");
+  add('          (r.status === "queued" || r.status === "waiting" || r.status === "pending" || r.status === "in_progress")');
+  add("      );");
+  add("      if (activeRun) {");
+  add("        return NextResponse.json" + (TS ? "<AnteaterResponse>" : "") + "(");
+  add('          { requestId: "", branch: "", status: "busy" }');
+  add("        );");
+  add("      }");
+  add("    }");
+  add("");
   add("    const requestId = crypto.randomUUID().slice(0, 8);");
   add("    const branch = body.mode === \"copy\"");
   add("      ? `anteater/friend-${requestId}`");
@@ -433,45 +525,105 @@ export function generateApiRoute({ isTypeScript, productionBranch }) {
   add("  }");
   add("");
   add("  try {");
-  add("    const prRes = await ghFetch(");
-  add("      `https://api.github.com/repos/${repo}/pulls?head=${repo.split(\"/\")[0]}:${branch}&state=all&per_page=1`,");
-  add("    );");
-  add("    if (prRes.ok) {");
-  add("      const prs = await prRes.json();");
-  add("      if (prs.length) {");
-  add("        const pr = prs[0];");
-  add("        if (pr.merged_at) {");
-  add("          return status({ step: \"deploying\", completed: false });");
-  add("        }");
-  add("        if (pr.state === \"closed\") {");
-  add('          return status({ step: "error", completed: true, error: "PR was closed without merging" });');
-  add("        }");
-  add("        return status({ step: \"merging\", completed: false });");
-  add("      }");
+  add("    const owner = repo.split(\"/\")[0];");
+  add("    const [prRes, runsRes] = await Promise.all([");
+  add("      ghFetch(`https://api.github.com/repos/${repo}/pulls?head=${owner}:${branch}&state=all&per_page=1`),");
+  add("      ghFetch(`https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?branch=${encodeURIComponent(branch)}&per_page=20`),");
+  add("    ]);");
+  add("");
+  add("    if (!prRes.ok || !runsRes.ok) {");
+  add('      return status({ step: "starting", completed: false, error: "Status source unavailable" }, 503);');
   add("    }");
   add("");
-  add("    const branchRes = await ghFetch(");
-  add("      `https://api.github.com/repos/${repo}/git/refs/heads/${branch}`,");
-  add("    );");
-  add("    if (branchRes.ok) {");
+  add("    const prs = await prRes.json();");
+  add("    const pr = prs[0];");
+  add("    const runsData = await runsRes.json();");
+  add("    const branchRuns = (runsData.workflow_runs || [])");
+  add("      .filter((r" + (TS ? ": any" : "") + ") => r.head_branch === branch)");
+  add("      .sort((a" + (TS ? ": any" : "") + ", b" + (TS ? ": any" : "") + ") =>");
+  add("        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()");
+  add("      );");
+  add("    const latestRun = branchRuns[0];");
+  add("");
+  add("    if (pr?.merged_at) {");
+  add("      // PR merged — check deployment status, default to deploying");
+  add("      const mergeSha = pr.merge_commit_sha;");
+  add("      if (!mergeSha) {");
+  add('        return status({ step: "deploying", completed: false });');
+  add("      }");
+  add("");
+  add("      const depRes = await ghFetch(");
+  add("        `https://api.github.com/repos/${repo}/deployments?sha=${mergeSha}&per_page=1`");
+  add("      );");
+  add("      if (!depRes.ok) {");
+  add('        return status({ step: "deploying", completed: false });');
+  add("      }");
+  add("      const deployments = await depRes.json();");
+  add("      const depId = deployments?.[0]?.id;");
+  add("      if (!depId) {");
+  add('        return status({ step: "deploying", completed: false });');
+  add("      }");
+  add("");
+  add("      const depStatusRes = await ghFetch(");
+  add("        `https://api.github.com/repos/${repo}/deployments/${depId}/statuses?per_page=1`");
+  add("      );");
+  add("      if (!depStatusRes.ok) {");
+  add('        return status({ step: "deploying", completed: false });');
+  add("      }");
+  add("      const depStatuses = await depStatusRes.json();");
+  add("      const depState = depStatuses?.[0]?.state;");
+  add("      if (depState === \"success\") {");
+  add("        return status({ step: \"deploying\", completed: true });");
+  add("      }");
+  add("      if (depState === \"failure\" || depState === \"error\" || depState === \"inactive\") {");
+  add('        return status({ step: "error", completed: true, error: "Deployment failed" });');
+  add("      }");
+  add("      return status({ step: \"deploying\", completed: false });");
+  add("    }");
+  add("");
+  add("    if (pr?.state === \"closed\") {");
+  add('      return status({ step: "error", completed: true, error: "PR was closed without merging" });');
+  add("    }");
+  add("    if (pr?.state === \"open\") {");
+  add("      // Check if workflow already failed (e.g. auto-merge conflict)");
+  add("      if (latestRun?.status === \"completed\" && latestRun?.conclusion === \"failure\") {");
+  add('        return status({ step: "error", completed: true, error: "Auto-merge failed — check GitHub Actions" });');
+  add("      }");
   add("      return status({ step: \"merging\", completed: false });");
   add("    }");
   add("");
-  add("    const runsRes = await ghFetch(");
-  add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=5`,");
-  add("    );");
-  add("    if (runsRes.ok) {");
-  add("      const { workflow_runs: runs } = await runsRes.json();");
-  add("      const recentFailed = runs?.find(");
-  add('        (r' + (TS ? ": { status: string; conclusion: string; created_at: string }" : "") + ') => r.status === "completed" && r.conclusion === "failure" &&');
-  add("          Date.now() - new Date(r.created_at).getTime() < 5 * 60 * 1000,");
-  add("      );");
-  add("      if (recentFailed) {");
+  add("    if (!latestRun) {");
+  add('      return status({ step: "starting", completed: false });');
+  add("    }");
+  add("");
+  add("    if (latestRun.status === \"queued\" || latestRun.status === \"waiting\" || latestRun.status === \"pending\") {");
+  add("      return status({ step: \"starting\", completed: false });");
+  add("    }");
+  add("");
+  add("    if (latestRun.status === \"in_progress\") {");
+  add("      const jobsRes = await ghFetch(latestRun.jobs_url);");
+  add("      if (!jobsRes.ok) {");
+  add('        return status({ step: "working", completed: false });');
+  add("      }");
+  add("      const jobsData = await jobsRes.json();");
+  add("      const steps = jobsData.jobs?.[0]?.steps || [];");
+  add("      const agentStep = steps.find((s" + (TS ? ": any" : "") + ") => s.name === \"Run Anteater agent\");");
+  add("      if (agentStep?.status === \"in_progress\") {");
+  add("        return status({ step: \"working\", completed: false });");
+  add("      }");
+  add("      return status({ step: \"starting\", completed: false });");
+  add("    }");
+  add("");
+  add("    if (latestRun.status === \"completed\") {");
+  add("      if (latestRun.conclusion === \"success\") {");
+  add('        return status({ step: "working", completed: false });');
+  add("      }");
+  add("      if (latestRun.conclusion === \"failure\" || latestRun.conclusion === \"cancelled\" || latestRun.conclusion === \"timed_out\" || latestRun.conclusion === \"action_required\") {");
   add('        return status({ step: "error", completed: true, error: "Workflow failed — check GitHub Actions" });');
   add("      }");
   add("    }");
   add("");
-  add("    return status({ step: \"working\", completed: false });");
+  add('    return status({ step: "starting", completed: false });');
   add("  } catch {");
   add('    return status({ step: "error", completed: true, error: "Status check failed" }, 500);');
   add("  }");
@@ -530,7 +682,7 @@ export function generateClaudeSettings({ model, permissionsMode }) {
 /**
  * Generate the GitHub Actions workflow.
  */
-export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch, model, packageManager = "npm" }) {
+export function generateWorkflow({ allowedGlobs, blockedGlobs, productionBranch, model, packageManager = "npm", permissionsMode = "sandboxed" }) {
   const allowed = allowedGlobs.join(", ");
   const blocked = blockedGlobs.join(", ");
 
@@ -606,10 +758,16 @@ jobs:
             - If the build fails, read the error output and fix the issues, then build again
             - Keep iterating until the build passes or you've tried 3 times
             - Do NOT commit — just leave the changed files on disk
-
+${permissionsMode === "unrestricted" ? `
+            INTERNET ACCESS: You can and are encouraged to use the internet for research,
+            reference materials, images, assets, documentation, and any other resources
+            that would help you complete the user's request. Use tools like WebFetch,
+            WebSearch, and curl freely.
+` : ""}
             IMPORTANT: Always verify your changes compile by running the build command.
           anthropic_api_key: \${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--allowedTools Edit,Read,Write,Bash,Glob,Grep --max-turns 25"
+          claude_args: "${permissionsMode === "unrestricted" ? "--max-turns 50" : "--allowedTools Edit,Read,Write,Bash,Glob,Grep --max-turns 50"}"
+          show_full_output: true
 
       - name: Check for changes
         id: changes
@@ -690,8 +848,8 @@ export function generateRunsRoute({ isTypeScript }) {
   add("  return undefined;");
   add("}");
   add("");
-  add("function emptyResponse() {");
-  add("  return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID });");
+  add("function emptyResponse(error = \"Status unavailable\", status = 503) {");
+  add("  return NextResponse.json" + (TS ? "<AnteaterRunsResponse>" : "") + "({ runs: [], deploymentId: process.env.VERCEL_DEPLOYMENT_ID, error }, { status });");
   add("}");
   add("");
   add("/** Parse run-name format: \"anteater [requestId] [mode] prompt text\" */");
@@ -706,7 +864,7 @@ export function generateRunsRoute({ isTypeScript }) {
   add("export async function GET() {");
   add("  const repo = getRepo();");
   add("  const token = process.env.GITHUB_TOKEN;");
-  add("  if (!repo || !token) return emptyResponse();");
+  add("  if (!repo || !token) return emptyResponse(\"Server misconfigured\", 500);");
   add("");
   add("  const gh = (url" + (TS ? ": string" : "") + ") =>");
   add("    fetch(url, {");
@@ -760,13 +918,58 @@ export function generateRunsRoute({ isTypeScript }) {
   add("");
   add("      // Check PR state first (takes precedence for later stages)");
   add("      if (pr?.merged_at) {");
-  add("        const mergedAgo = Date.now() - new Date(pr.merged_at).getTime();");
-  add("        if (mergedAgo > 300000) continue; // >5 min ago, done");
+  add("        const mergedAtMs = new Date(pr.merged_at).getTime();");
+  add("        if (!Number.isFinite(mergedAtMs)) continue;");
+  add("");
+  add("        // Check deployment status for the merge commit");
+  add("        const mergeSha = pr.merge_commit_sha;");
+  add("        if (mergeSha) {");
+  add("          try {");
+  add("            const depRes = await gh(");
+  add("              `https://api.github.com/repos/${repo}/deployments?sha=${mergeSha}&per_page=1`");
+  add("            );");
+  add("            if (depRes.ok) {");
+  add("              const deployments = await depRes.json();");
+  add("              if (deployments.length > 0) {");
+  add("                const depId = deployments[0]?.id;");
+  add("                if (depId) {");
+  add("                  const depStatusRes = await gh(");
+  add("                    `https://api.github.com/repos/${repo}/deployments/${depId}/statuses?per_page=1`");
+  add("                  );");
+  add("                  if (depStatusRes.ok) {");
+  add("                    const depStatuses = await depStatusRes.json();");
+  add("                    const depState = depStatuses?.[0]?.state;");
+  add("                    if (depState === \"success\") continue;");
+  add("                    if (depState === \"failure\" || depState === \"error\" || depState === \"inactive\") {");
+  add("                      runs.push({ ...base, step: \"error\", failedStep: \"Deployment failed\" });");
+  add("                      continue;");
+  add("                    }");
+  add("                  }");
+  add("                }");
+  add("              }");
+  add("            }");
+  add("          } catch {");
+  add("            // Deploy status unknown — show deploying (it IS deploying)");
+  add("          }");
+  add("        }");
+  add("");
+  add("        // PR is merged — if deploy hasn't succeeded or failed, it's deploying");
   add("        runs.push({ ...base, step: \"deploying\" });");
   add("        continue;");
   add("      }");
   add("      if (pr?.state === \"closed\") continue; // closed without merge");
   add("      if (pr?.state === \"open\") {");
+  add("        // Check if the workflow that should merge this already failed");
+  add("        if (wfRun.status === \"completed\" && wfRun.conclusion === \"failure\") {");
+  add("          needJobs.push({ wfRun, runData: base });");
+  add("          continue;");
+  add("        }");
+  add("        // Check for stalled merge (PR open > 15 min)");
+  add("        const prCreatedMs = new Date(pr.created_at).getTime();");
+  add("        if (Number.isFinite(prCreatedMs) && Date.now() - prCreatedMs > 15 * 60 * 1000) {");
+  add("          runs.push({ ...base, step: \"error\", failedStep: \"Merge stalled\" });");
+  add("          continue;");
+  add("        }");
   add("        runs.push({ ...base, step: \"merging\" });");
   add("        continue;");
   add("      }");
@@ -781,8 +984,8 @@ export function generateRunsRoute({ isTypeScript }) {
   add("        continue;");
   add("      }");
   add("");
-  add("      if (wfRun.status === \"queued\") {");
-  add("        runs.push({ ...base, step: \"initializing\" });");
+  add("      if (wfRun.status === \"queued\" || wfRun.status === \"waiting\" || wfRun.status === \"pending\") {");
+  add("        runs.push({ ...base, step: \"starting\" });");
   add("        continue;");
   add("      }");
   add("");
@@ -799,24 +1002,31 @@ export function generateRunsRoute({ isTypeScript }) {
   add("        needJobs.map(async ({ wfRun, runData }) => {");
   add("          try {");
   add("            const res = await gh(wfRun.jobs_url);");
-  add("            if (!res.ok) return { wfRun, runData, steps: [] };");
+  add("            if (!res.ok) return { wfRun, runData, steps: [], unresolved: true };");
   add("            const data = await res.json();");
-  add("            return { wfRun, runData, steps: data.jobs?.[0]?.steps || [] };");
+  add("            return { wfRun, runData, steps: data.jobs?.[0]?.steps || [], unresolved: false };");
   add("          } catch {");
-  add("            return { wfRun, runData, steps: [] };");
+  add("            return { wfRun, runData, steps: [], unresolved: true };");
   add("          }");
   add("        })");
   add("      );");
   add("");
-  add("      for (const { wfRun, runData, steps } of jobResults) {");
+  add("      for (const { wfRun, runData, steps, unresolved } of jobResults) {");
   add("        if (wfRun.conclusion === \"failure\") {");
-  add("          const failed = steps.find((s" + (TS ? ": any" : "") + ") => s.conclusion === \"failure\");");
-  add("          runs.push({ ...runData, step: \"error\", failedStep: failed?.name || \"Unknown\" });");
+  add("          if (unresolved) {");
+  add("            runs.push({ ...runData, step: \"error\", failedStep: \"Unknown\" });");
+  add("          } else {");
+  add("            const failed = steps.find((s" + (TS ? ": any" : "") + ") => s.conclusion === \"failure\");");
+  add("            runs.push({ ...runData, step: \"error\", failedStep: failed?.name || \"Unknown\" });");
+  add("          }");
+  add("        } else if (unresolved) {");
+  add("          // in_progress but can't fetch jobs — assume working (it IS running)");
+  add("          runs.push({ ...runData, step: \"working\" });");
   add("        } else {");
   add("          // in_progress — check if agent step has started");
   add("          const agentStep = steps.find((s" + (TS ? ": any" : "") + ") => s.name === \"Run Anteater agent\");");
   add("          const isWorking = agentStep?.status === \"in_progress\" || agentStep?.conclusion === \"success\";");
-  add("          runs.push({ ...runData, step: isWorking ? \"working\" : \"initializing\" });");
+  add("          runs.push({ ...runData, step: isWorking ? \"working\" : \"starting\" });");
   add("        }");
   add("      }");
   add("    }");
@@ -837,7 +1047,7 @@ export function generateRunsRoute({ isTypeScript }) {
   add("      { runs: freshRuns.slice(0, 5), deploymentId: process.env.VERCEL_DEPLOYMENT_ID }");
   add("    );");
   add("  } catch {");
-  add("    return emptyResponse();");
+  add("    return emptyResponse(\"Status check failed\", 500);");
   add("  }");
   add("}");
   add("");
@@ -947,135 +1157,6 @@ function buildRunsDeleteHandlerLines(TS) {
 function buildRunsDeleteHandler(isTypeScript) {
   return buildRunsDeleteHandlerLines(isTypeScript).join("\n");
 }
-
-/**
- * Generate the AI apply script.
- */
-export function generateApplyScript() {
-  // Read from the existing script in the monorepo — or inline it
-  return `#!/usr/bin/env node
-
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
-import { glob } from "node:fs/promises";
-import { parseArgs } from "node:util";
-import { fileURLToPath } from "node:url";
-
-const { values: args } = parseArgs({
-  options: {
-    prompt: { type: "string" },
-    "allowed-paths": { type: "string" },
-    "blocked-paths": { type: "string", default: "" },
-  },
-});
-
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (!ANTHROPIC_API_KEY) { console.error("Missing ANTHROPIC_API_KEY"); process.exit(1); }
-if (!args.prompt) { console.error("Missing --prompt"); process.exit(1); }
-
-const allowedGlobs = args["allowed-paths"]?.split(",").map((s) => s.trim()) ?? [];
-const blockedGlobs = args["blocked-paths"]?.split(",").filter(Boolean).map((s) => s.trim()) ?? [];
-
-async function collectFiles() {
-  const files = new Set();
-  for (const pattern of allowedGlobs) {
-    for await (const entry of glob(pattern)) {
-      const rel = relative(process.cwd(), resolve(entry)).replace(/\\\\/g, "/");
-      let blocked = false;
-      for (const bp of blockedGlobs) {
-        const prefix = bp.replace(/\\/?\\*\\*?$/, "");
-        if (rel === prefix || rel.startsWith(prefix + "/")) { blocked = true; break; }
-      }
-      if (!blocked && !rel.includes("node_modules")) files.add(rel);
-    }
-  }
-  return [...files].sort();
-}
-
-async function readFiles(paths) {
-  const result = {};
-  for (const p of paths) {
-    try { result[p] = await readFile(p, "utf-8"); } catch {}
-  }
-  return result;
-}
-
-async function callClaude(prompt, fileContents) {
-  const fileList = Object.entries(fileContents)
-    .map(([path, content]) => \`--- \${path} ---\\n\${content}\`).join("\\n\\n");
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 16384,
-      system: \`You are Anteater, an AI coding agent. You modify web application source files based on user requests.
-RULES: Make minimal, focused changes. Only modify files that need to change. Preserve existing code style.
-Never modify environment files, API routes, or configuration.
-CRITICAL: The "path" in each output object MUST exactly match one of the input file paths. Do NOT shorten, rename, or strip prefixes from paths.
-OUTPUT FORMAT: Return a JSON array of objects with "path" and "content". Return ONLY valid JSON, no markdown fences.
-If no changes are needed, return an empty array: []\`,
-      messages: [{ role: "user", content: \`Files:\\n\\n\${fileList}\\n\\nRequest: \${prompt}\` }],
-    }),
-  });
-
-  if (!res.ok) throw new Error(\`Anthropic API error \${res.status}: \${await res.text()}\`);
-  const data = await res.json();
-  if (data.stop_reason === "max_tokens") throw new Error("Response truncated — max_tokens exceeded");
-  return JSON.parse(data.content?.[0]?.text || "[]");
-}
-
-export async function main() {
-  console.log(\`Anteater agent: "\${args.prompt}"\`);
-  const paths = await collectFiles();
-  console.log(\`Found \${paths.length} editable files\`);
-  if (!paths.length) { console.log("No files matched."); process.exit(0); }
-
-  const contents = await readFiles(paths);
-  console.log("Calling Claude...");
-  const changes = await callClaude(args.prompt, contents);
-
-  if (!changes?.length) { console.log("No changes needed."); process.exit(0); }
-
-  // Validate returned paths match input files
-  const validPathSet = new Set(Object.keys(contents));
-  const validated = [];
-  for (const change of changes) {
-    if (validPathSet.has(change.path)) {
-      validated.push(change);
-    } else {
-      console.warn(\`  Rejected: \${change.path} (not in allowed input files)\`);
-      const basename = change.path.split("/").pop();
-      const match = [...validPathSet].find((p) => p.endsWith("/" + basename));
-      if (match) {
-        console.log(\`  Corrected: \${change.path} -> \${match}\`);
-        validated.push({ path: match, content: change.content });
-      }
-    }
-  }
-
-  if (!validated.length) { console.log("No valid changes after path validation."); process.exit(0); }
-  console.log(\`Modifying \${validated.length} file(s)\`);
-  for (const { path, content } of validated) {
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, content, "utf-8");
-    console.log(\`  Updated: \${path}\`);
-  }
-  console.log("Done!");
-}
-
-const isEntryPoint = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
-if (isEntryPoint) {
-  main().catch((err) => { console.error("Agent failed:", err); process.exit(1); });
-}
-`;
-}
-
 /**
  * Patch the layout file to include AnteaterBar.
  */
@@ -1146,14 +1227,19 @@ export async function scaffoldFiles(cwd, options) {
     if (await patchRunsRouteFailedTtlIfMissing(runsPath)) {
       results.push(`${join(runsDir, runsRoute.filename)} (patched failed-run TTL)`);
     }
+    if (await patchRunsRouteDeploymentCompletionIfNeeded(runsPath)) {
+      results.push(`${join(runsDir, runsRoute.filename)} (patched deploy completion detection)`);
+    }
   }
 
   // GitHub Action workflow
   const workflowPath = join(cwd, ".github/workflows/anteater.yml");
   if (await writeIfNotExists(workflowPath, generateWorkflow(options))) {
     results.push(".github/workflows/anteater.yml");
-  } else if (await patchWorkflowModelInputIfPresent(workflowPath)) {
-    results.push(".github/workflows/anteater.yml (patched deprecated model input)");
+  } else {
+    if (await patchWorkflowModelInputIfPresent(workflowPath)) {
+      results.push(".github/workflows/anteater.yml (patched deprecated model input)");
+    }
   }
 
   // Claude Code agent settings (always overwrite — reflects current choices)
