@@ -11,6 +11,8 @@ import type {
 const POLL_ACTIVE = 3000;
 const POLL_IDLE = 30000;
 const STORAGE_KEY = "anteater_pending_runs";
+const DISMISSED_FAILED_RUNS_KEY = "anteater_dismissed_failed_runs";
+const FAILED_RUN_MAX_AGE_MS = 60 * 60 * 1000; // 1 hour
 
 /** Optimistic run saved to localStorage for instant UI before server catches up */
 interface PendingRun {
@@ -19,6 +21,11 @@ interface PendingRun {
   prompt: string;
   mode: "prod" | "copy";
   submittedAt: number;
+}
+
+interface DismissedRun {
+  requestId: string;
+  dismissedAt: number;
 }
 
 function loadPendingRuns(): PendingRun[] {
@@ -42,6 +49,34 @@ function savePendingRuns(runs: PendingRun[]) {
   } catch {}
 }
 
+function loadDismissedRuns(): DismissedRun[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(DISMISSED_FAILED_RUNS_KEY);
+    if (!raw) return [];
+    const runs: DismissedRun[] = JSON.parse(raw);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return runs.filter((r) => r.dismissedAt > cutoff).slice(-100);
+  } catch {
+    return [];
+  }
+}
+
+function saveDismissedRuns(runs: DismissedRun[]) {
+  if (typeof window === "undefined") return;
+  try {
+    if (runs.length === 0) localStorage.removeItem(DISMISSED_FAILED_RUNS_KEY);
+    else localStorage.setItem(DISMISSED_FAILED_RUNS_KEY, JSON.stringify(runs));
+  } catch {}
+}
+
+function isExpiredFailedRun(run: AnteaterRun): boolean {
+  if (run.step !== "error") return false;
+  const startedAtMs = new Date(run.startedAt).getTime();
+  if (Number.isNaN(startedAtMs)) return false;
+  return Date.now() - startedAtMs > FAILED_RUN_MAX_AGE_MS;
+}
+
 export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
   const [runs, setRuns] = useState<AnteaterRun[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -50,9 +85,11 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
   const initialDeploymentIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const pendingRunsRef = useRef<PendingRun[]>([]);
+  const dismissedRunsRef = useRef<DismissedRun[]>([]);
 
   useEffect(() => {
     pendingRunsRef.current = loadPendingRuns();
+    dismissedRunsRef.current = loadDismissedRuns();
   }, []);
 
   /**
@@ -61,7 +98,11 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
    * before the server picks up a newly dispatched workflow (~5-10s).
    */
   const mergeRuns = useCallback((serverRuns: AnteaterRun[]): AnteaterRun[] => {
-    const serverRequestIds = new Set(serverRuns.map((r) => r.requestId));
+    const visibleServerRuns = serverRuns.filter((r) => {
+      if (isExpiredFailedRun(r)) return false;
+      return !dismissedRunsRef.current.some((d) => d.requestId === r.requestId);
+    });
+    const serverRequestIds = new Set(visibleServerRuns.map((r) => r.requestId));
     const cutoff = Date.now() - 10 * 60 * 1000;
 
     // Keep pending runs the server doesn't know about yet
@@ -82,7 +123,7 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
     }));
 
     // Pending first (newest), then server runs, cap at 5
-    return [...pendingAsRuns, ...serverRuns].slice(0, 5);
+    return [...pendingAsRuns, ...visibleServerRuns].slice(0, 5);
   }, []);
 
   const pollRuns = useCallback(async () => {
@@ -242,11 +283,21 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
 
       // Delete from GitHub Actions
       try {
-        await fetch(`${apiEndpoint}/runs?requestId=${encodeURIComponent(requestId)}`, {
+        dismissedRunsRef.current = [
+          ...dismissedRunsRef.current.filter((r) => r.requestId !== requestId),
+          { requestId, dismissedAt: Date.now() },
+        ];
+        saveDismissedRuns(dismissedRunsRef.current);
+
+        const res = await fetch(`${apiEndpoint}/runs?requestId=${encodeURIComponent(requestId)}`, {
           method: "DELETE",
         });
+        if (!res.ok && res.status !== 404 && res.status !== 405 && res.status !== 409) {
+          setError(`Delete failed (${res.status}). Hidden locally for now.`);
+        }
       } catch {
-        // Best-effort — the run is already gone from the UI
+        // Best-effort — the run is already gone from the UI.
+        // Keep it dismissed locally so old backends don't re-add it.
       }
     },
     [apiEndpoint],
