@@ -1,6 +1,6 @@
 {
   "name": "next-anteater",
-  "version": "0.2.5",
+  "version": "0.2.7",
   "description": "AI-powered live editing for your Next.js app",
   "bin": {
     "anteater": "bin/setup-anteater.mjs",
@@ -16,7 +16,12 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["bin/", "lib/", "dist/", "src/"],
+  "files": [
+    "bin/",
+    "lib/",
+    "dist/",
+    "src/"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
   },
@@ -29,7 +34,13 @@
     "@types/react": "^19.0.0",
     "typescript": "^5.8.0"
   },
-  "keywords": ["anteater", "ai", "nextjs", "github-actions", "vercel"],
+  "keywords": [
+    "anteater",
+    "ai",
+    "nextjs",
+    "github-actions",
+    "vercel"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=20"

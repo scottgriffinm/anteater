@@ -233,7 +233,26 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
     [apiEndpoint, runs.length, startPolling],
   );
 
+  const deleteRun = useCallback(
+    async (requestId: string) => {
+      // Optimistically remove from UI
+      setRuns((prev) => prev.filter((r) => r.requestId !== requestId));
+      pendingRunsRef.current = pendingRunsRef.current.filter((p) => p.requestId !== requestId);
+      savePendingRuns(pendingRunsRef.current);
+
+      // Delete from GitHub Actions
+      try {
+        await fetch(`${apiEndpoint}/runs?requestId=${encodeURIComponent(requestId)}`, {
+          method: "DELETE",
+        });
+      } catch {
+        // Best-effort — the run is already gone from the UI
+      }
+    },
+    [apiEndpoint],
+  );
+
   const canSubmit = !submitting && runs.length < 5;
 
-  return { runs, submitting, error, canSubmit, submit };
+  return { runs, submitting, error, canSubmit, submit, deleteRun };
 }

@@ -604,6 +604,71 @@ export function generateRunsRoute({ isTypeScript }) {
   add("    return emptyResponse();");
   add("  }");
   add("}");
+  add("");
+
+  // --- DELETE handler: delete a failed workflow run by requestId ---
+  add("export async function DELETE(request" + (TS ? ": Request" : "") + ") {");
+  add("  const repo = getRepo();");
+  add("  const token = process.env.GITHUB_TOKEN;");
+  add("  if (!repo || !token) {");
+  add("    return NextResponse.json({ error: \"Server misconfigured\" }, { status: 500 });");
+  add("  }");
+  add("");
+  add("  const { searchParams } = new URL(request.url);");
+  add("  const requestId = searchParams.get(\"requestId\");");
+  add("  if (!requestId) {");
+  add("    return NextResponse.json({ error: \"requestId is required\" }, { status: 400 });");
+  add("  }");
+  add("");
+  add("  const gh = (url" + (TS ? ": string" : "") + ", options" + (TS ? "?: RequestInit" : "") + ") =>");
+  add("    fetch(url, {");
+  add("      ...options,");
+  add("      headers: {");
+  add("        Authorization: `Bearer ${token}`,");
+  add('        Accept: "application/vnd.github+json",');
+  add('        "X-GitHub-Api-Version": "2022-11-28",');
+  add("        ...options?.headers,");
+  add("      },");
+  add("    });");
+  add("");
+  add("  try {");
+  add("    // Find the workflow run matching this requestId");
+  add("    const res = await gh(");
+  add("      `https://api.github.com/repos/${repo}/actions/workflows/anteater.yml/runs?per_page=100`");
+  add("    );");
+  add("    if (!res.ok) {");
+  add("      return NextResponse.json({ error: \"Failed to fetch workflow runs\" }, { status: 502 });");
+  add("    }");
+  add("");
+  add("    const data = await res.json();");
+  add("    const wfRun = (data.workflow_runs || []).find(");
+  add("      (r" + (TS ? ": any" : "") + ") => r.display_title?.includes(`[${requestId}]`)");
+  add("    );");
+  add("");
+  add("    if (!wfRun) {");
+  add("      return NextResponse.json({ error: \"Workflow run not found\" }, { status: 404 });");
+  add("    }");
+  add("");
+  add("    // Only failed runs are deletable from this endpoint");
+  add("    if (!(wfRun.status === \"completed\" && wfRun.conclusion === \"failure\")) {");
+  add("      return NextResponse.json({ error: \"Only failed runs can be deleted\" }, { status: 409 });");
+  add("    }");
+  add("");
+  add("    // Delete the workflow run");
+  add("    const delRes = await gh(");
+  add("      `https://api.github.com/repos/${repo}/actions/runs/${wfRun.id}`,");
+  add("      { method: \"DELETE\" }");
+  add("    );");
+  add("");
+  add("    if (!delRes.ok && delRes.status !== 204) {");
+  add("      return NextResponse.json({ error: \"Failed to delete workflow run\" }, { status: 502 });");
+  add("    }");
+  add("");
+  add("    return NextResponse.json({ deleted: true });");
+  add("  } catch {");
+  add("    return NextResponse.json({ error: \"Delete failed\" }, { status: 500 });");
+  add("  }");
+  add("}");
 
   return {
     filename: `route.${ext}`,
@@ -622,6 +687,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { glob } from "node:fs/promises";
 import { parseArgs } from "node:util";
+import { fileURLToPath } from "node:url";
 
 const { values: args } = parseArgs({
   options: {
@@ -692,7 +758,7 @@ If no changes are needed, return an empty array: []\`,
   return JSON.parse(data.content?.[0]?.text || "[]");
 }
 
-async function main() {
+export async function main() {
   console.log(\`Anteater agent: "\${args.prompt}"\`);
   const paths = await collectFiles();
   console.log(\`Found \${paths.length} editable files\`);
@@ -715,7 +781,7 @@ async function main() {
       const basename = change.path.split("/").pop();
       const match = [...validPathSet].find((p) => p.endsWith("/" + basename));
       if (match) {
-        console.log(\`  Corrected: \${change.path} → \${match}\`);
+        console.log(\`  Corrected: \${change.path} -> \${match}\`);
         validated.push({ path: match, content: change.content });
       }
     }
@@ -731,7 +797,10 @@ async function main() {
   console.log("Done!");
 }
 
-main().catch((err) => { console.error("Agent failed:", err); process.exit(1); });
+const isEntryPoint = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isEntryPoint) {
+  main().catch((err) => { console.error("Agent failed:", err); process.exit(1); });
+}
 `;
 }
 
@@ -799,12 +868,12 @@ export async function scaffoldFiles(cwd, options) {
     results.push(".github/workflows/anteater.yml");
   }
 
-  // Claude Code agent settings
+  // Claude Code agent settings (always overwrite — reflects current choices)
   if (options.model && options.permissionsMode) {
     const settingsPath = join(cwd, ".claude/settings.local.json");
-    if (await writeIfNotExists(settingsPath, generateClaudeSettings(options))) {
-      results.push(".claude/settings.local.json");
-    }
+    await mkdir(dirname(settingsPath), { recursive: true });
+    await writeFile(settingsPath, generateClaudeSettings(options), "utf-8");
+    results.push(".claude/settings.local.json");
   }
 
   // Patch layout
