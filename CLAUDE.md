@@ -170,6 +170,9 @@ After answering "n" to default paths, two extra prompts appear: allowed globs an
 
 - One-liner: **"Let users make your app."**
 - Install command: `npx next-anteater setup`
+- **README header order**: Title/tagline (`<h1>`) goes ABOVE the logo image, not below it. The preferred format is `Anteater — Let users make your app` as h1, then the centered logo SVG underneath.
+- **No em dashes in README body text.** Em dashes are fine in the h1 title (branding), but never in body paragraphs or feature lists. Use colons for definition-style bullet points (e.g. `**Feature:** description`), and periods or commas to break up sentences.
+- **Security language frames risks, not recommendations.** Don't say "Only expose to trusted users" (recommendation). Say "Any user with access can make arbitrary code changes" (risk). Let the reader decide what to do about it.
 
 ## Run Status Model
 

@@ -13,12 +13,12 @@
 </div>
 
 <div align="center">
-<a href="https://www.anteater.cool">Website</a> &middot; <a href="https://www.npmjs.com/package/next-anteater">npm</a> &middot; <a href="https://github.com/scottgriffinm/anteater/issues">Issues</a>
+<a href="https://www.anteater.cool">🌐 Website</a> &middot; <a href="https://www.npmjs.com/package/next-anteater">📦 npm</a> &middot; <a href="https://github.com/scottgriffinm/anteater/issues">🐛 Issues</a>
 </div>
 
 <br/>
 
-Anteater adds a prompt bar to your Next.js app. When a user describes a change, Claude edits the code, opens a PR, and redeploys automatically — all through GitHub Actions.
+Anteater adds a prompt bar to your Next.js + Vercel app. Users describe a change, Claude codes it, and the app redeploys automatically.
 
 ## Setup
 
@@ -40,24 +40,24 @@ User types change  →  GitHub Action runs AI agent  →  PR auto-merges  →  V
 4. The workflow opens a PR with auto-merge enabled
 5. Once merged, Vercel redeploys your app with the changes live
 
-The agent runs as a full multi-turn [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session — it can read files, edit code, run builds, and iterate on errors across up to 50 turns.
+The agent runs as a full multi-turn [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session. It can read files, edit code, run builds, and iterate on errors autonomously.
 
 ## Features
 
-- **One command setup** — `npx next-anteater setup` handles scaffolding, secrets, env vars, and workflow configuration
-- **Real-time status** — the prompt bar tracks each run through Starting, Working, Merging, Deploying, and auto-reloads on deploy
-- **Sandboxed or unrestricted** — choose whether the agent can access the internet and external tools, or stays locked to code editing only
-- **Model selection** — pick from Sonnet, Opus, Opus 1M, or Haiku depending on your cost and capability needs
-- **Path scoping** — restrict which files and directories the agent is allowed to modify
-- **Clean uninstall** — `npx next-anteater uninstall` removes everything it added
+- **One command setup:** `npx next-anteater setup` handles scaffolding, secrets, env vars, and workflow configuration
+- **Real-time status:** the prompt bar tracks each run through Starting, Working, Merging, Deploying, and auto-reloads on deploy
+- **Sandboxed or unrestricted:** choose whether the agent can access the internet and external tools, or stays locked to code editing only
+- **Model selection:** pick from Sonnet, Opus, Opus 1M, or Haiku depending on your cost and capability needs
+- **Path scoping:** restrict which files and directories the agent is allowed to modify
+- **Clean uninstall:** `npx next-anteater uninstall` removes everything it added
 
-## Security Warning
+## Security Risks
 
 Anteater gives users the ability to modify your application's code via AI. This is equivalent to giving someone commit access to your repository.
 
-- **Only expose Anteater to trusted users.** Any user with access to the prompt bar can instruct the AI agent to make arbitrary code changes, including destructive ones.
-- **Run in a sandboxed environment without real data.** Anteater-generated PRs execute in GitHub Actions with access to your repository secrets and deployment pipeline.
-- **You are responsible for access control.** Anteater does not provide authentication or authorization. Protect the prompt bar behind your own auth layer.
+- **Arbitrary code changes.** Any user with access to the prompt bar can instruct the AI agent to make any code change, including destructive ones.
+- **Secret and pipeline exposure.** Anteater-generated PRs execute in GitHub Actions with access to your repository secrets and deployment pipeline.
+- **No built-in access control.** Anteater does not provide authentication or authorization. The prompt bar is accessible to anyone who can load the page.
 
 > **TL;DR:** Treat Anteater like giving someone commit access to your repo. Don't expose it to the public internet with real credentials or production data.
 
