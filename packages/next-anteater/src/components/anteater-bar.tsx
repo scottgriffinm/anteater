@@ -347,7 +347,7 @@ export function AnteaterBar({
               style={{
                 borderRadius: showPanel ? "0 0 12px 12px" : "12px",
                 transform: isExpanded ? "translateX(0)" : "translateX(100%)",
-                transition: "transform 0.3s ease-out",
+                transition: "transform 0.25s ease-out",
               }}
             >
               <div
