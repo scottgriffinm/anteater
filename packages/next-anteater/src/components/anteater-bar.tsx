@@ -303,8 +303,8 @@ export function AnteaterBar({
               maxHeight: isExpanded && showPanel ? "400px" : "0px",
               opacity: isExpanded && showPanel ? 1 : 0,
               transition: isExpanded && showPanel
-                ? "max-height 0.08s ease-out 0.08s, opacity 0.08s ease-out 0.08s, border-color 0.08s ease-out 0.08s, padding-bottom 0.08s ease-out 0.08s"
-                : "max-height 0.08s ease-out, opacity 0.08s ease-out, border-color 0.08s ease-out, padding-bottom 0.08s ease-out",
+                ? "max-height 0.15s ease-out 0.15s, opacity 0.15s ease-out 0.15s, border-color 0.15s ease-out 0.15s, padding-bottom 0.15s ease-out 0.15s"
+                : "max-height 0.15s ease-out, opacity 0.15s ease-out, border-color 0.15s ease-out, padding-bottom 0.15s ease-out",
               paddingBottom: isExpanded && showPanel ? `${BUTTON_SIZE + 4}px` : "0px",
               pointerEvents: isExpanded && showPanel ? "auto" : "none",
             }}
@@ -346,8 +346,8 @@ export function AnteaterBar({
                 borderRadius: showPanel ? "0 0 12px 12px" : "12px",
                 transform: isExpanded ? "translateX(0)" : "translateX(100%)",
                 transition: !isExpanded && showPanel
-                  ? "transform 0.08s ease-out 0.08s"
-                  : "transform 0.08s ease-out",
+                  ? "transform 0.15s ease-out 0.15s"
+                  : "transform 0.15s ease-out",
               }}
             >
               <div
