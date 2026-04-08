@@ -4,10 +4,6 @@
   <img src="anteater.svg" alt="Anteater" width="200" />
 </p>
 
-<div align="center">
-<a href="https://www.anteater.cool">🌐 Website</a> &middot; <a href="https://www.npmjs.com/package/next-anteater">📦 npm</a> &middot; <a href="https://github.com/scottgriffinm/anteater/issues">🐛 Issues</a>
-</div>
-
 <br/>
 
 Anteater adds a prompt bar to your Next.js + Vercel app. Users send changes, Claude codes it, then your app redeploys.
