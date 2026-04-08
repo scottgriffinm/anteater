@@ -29,6 +29,8 @@ export interface AnteaterRequest {
     userId?: string;
     role?: string;
   };
+  /** GitHub issue comment ID — included when draining a queued prompt so the server can delete it */
+  queueCommentId?: number;
 }
 
 export interface AnteaterResponse {
@@ -36,6 +38,8 @@ export interface AnteaterResponse {
   branch: string;
   status: "queued" | "busy" | "error";
   error?: string;
+  /** GitHub issue comment ID for this queued prompt (only set when status === "busy") */
+  queueCommentId?: number;
 }
 
 export type AnteaterStep = "queued" | "starting" | "working" | "merging" | "deploying" | "error";
@@ -64,6 +68,8 @@ export interface AnteaterRun {
   failedStep?: string;
   /** Position in the queue (only set when step === "queued") */
   queuePosition?: number;
+  /** Username of the person who submitted this run */
+  submittedBy?: string;
 }
 
 /** Response from GET /api/anteater/runs */

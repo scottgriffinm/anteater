@@ -93,7 +93,7 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
   const statusText = isError
     ? `Failed: ${run.failedStep || "Unknown"}`
     : isQueued
-      ? `Queued \u00b7 #${run.queuePosition || 1}`
+      ? `Queued \u00b7 #${run.queuePosition || 1}${run.submittedBy ? ` \u00b7 ${run.submittedBy}` : ""}`
       : `${STEP_LABEL[run.step] || run.step} \u00b7 ${formatElapsed(run.startedAt)}`;
 
   return (
@@ -180,6 +180,17 @@ function RunRow({ run, onDelete }: { run: AnteaterRun; onDelete?: (requestId: st
   );
 }
 
+const USERNAME_KEY = "anteater_username";
+
+function loadUsername(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(USERNAME_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
 export function AnteaterBar({
   apiEndpoint = "/api/anteater",
   mode = "prod",
@@ -188,8 +199,10 @@ export function AnteaterBar({
 }: AnteaterBarProps) {
   const [prompt, setPrompt] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
+  const [username, setUsername] = useState(loadUsername);
   const inputRef = useRef<HTMLInputElement>(null);
   const { runs, submitting, error, canSubmit, submit, deleteRun } = useAnteaterRuns(apiEndpoint);
+  const needsName = !username;
 
   useEffect(() => {
     if (isExpanded && inputRef.current) {
@@ -203,8 +216,19 @@ export function AnteaterBar({
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const text = prompt.trim();
-    if (!text || submitting) return;
+    if (!text) return;
 
+    // Name entry mode — save username and switch to prompt mode
+    if (needsName) {
+      try {
+        localStorage.setItem(USERNAME_KEY, text);
+      } catch {}
+      setUsername(text);
+      setPrompt("");
+      return;
+    }
+
+    if (submitting) return;
     setPrompt("");
 
     await submit({
@@ -213,6 +237,7 @@ export function AnteaterBar({
       branch,
       context: {
         pathname: typeof window !== "undefined" ? window.location.pathname : undefined,
+        userId: username || undefined,
       },
     });
   };
@@ -222,7 +247,7 @@ export function AnteaterBar({
       setIsExpanded(true);
       return;
     }
-    if (prompt.trim() && canSubmit) {
+    if (prompt.trim() && (needsName || canSubmit)) {
       handleSubmit();
       return;
     }
@@ -232,7 +257,7 @@ export function AnteaterBar({
 
   const hasRuns = runs.length > 0;
   const hasText = prompt.trim().length > 0;
-  const canSend = hasText && canSubmit;
+  const canSend = hasText && (needsName || canSubmit);
   const showPanel = hasRuns || !!error;
 
   return (
@@ -339,13 +364,15 @@ export function AnteaterBar({
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder={
-                    submitting
-                      ? "Sending..."
-                      : !canSubmit && runs.length >= 5
-                        ? "Max 5 runs at once"
-                        : placeholder
+                    needsName
+                      ? "Enter your name to make changes"
+                      : submitting
+                        ? "Sending..."
+                        : !canSubmit && runs.length >= 5
+                          ? "Max 5 runs at once"
+                          : placeholder
                   }
-                  disabled={submitting || runs.length >= 5}
+                  disabled={!needsName && (submitting || runs.length >= 5)}
                   style={{
                     flex: 1,
                     background: "transparent",
