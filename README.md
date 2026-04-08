@@ -6,8 +6,8 @@
 
 <br/>
 
-Adds a prompt bar to your Next.js + Vercel app. 
-User sends a change -> Claude codes it -> your app redeploys.
+Adds a prompt bar to your Next.js + Vercel app. Users send changes -> Claude codes them -> your app redeploys.
+
 ## Setup
 
 ```
