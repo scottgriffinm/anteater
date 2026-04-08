@@ -50,15 +50,25 @@ export async function detectProject(cwd) {
     result.isTypeScript = !!deps.typescript;
   }
 
-  // Detect router type
-  if (await fileExists(join(cwd, "app", "layout.tsx")) || await fileExists(join(cwd, "app", "layout.js"))) {
-    result.isAppRouter = true;
-    result.layoutFile = (await fileExists(join(cwd, "app", "layout.tsx")))
-      ? "app/layout.tsx"
-      : "app/layout.js";
+  // Detect router type (check both root and src/ directory)
+  const appDirs = ["app", "src/app"];
+  for (const dir of appDirs) {
+    if (await fileExists(join(cwd, dir, "layout.tsx")) || await fileExists(join(cwd, dir, "layout.js"))) {
+      result.isAppRouter = true;
+      result.hasSrcDir = dir.startsWith("src/");
+      result.layoutFile = (await fileExists(join(cwd, dir, "layout.tsx")))
+        ? `${dir}/layout.tsx`
+        : `${dir}/layout.js`;
+      break;
+    }
   }
-  if (await fileExists(join(cwd, "pages", "_app.tsx")) || await fileExists(join(cwd, "pages", "_app.js"))) {
-    result.isPagesRouter = true;
+  const pagesDirs = ["pages", "src/pages"];
+  for (const dir of pagesDirs) {
+    if (await fileExists(join(cwd, dir, "_app.tsx")) || await fileExists(join(cwd, dir, "_app.js"))) {
+      result.isPagesRouter = true;
+      result.hasSrcDir = dir.startsWith("src/");
+      break;
+    }
   }
 
   // Detect package manager

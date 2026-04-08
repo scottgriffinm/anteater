@@ -1358,7 +1358,8 @@ export async function scaffoldFiles(cwd, options) {
 
   // API route
   const route = generateApiRoute(options);
-  const routeDir = options.isAppRouter ? "app/api/anteater" : "pages/api/anteater";
+  const srcPrefix = options.hasSrcDir ? "src/" : "";
+  const routeDir = options.isAppRouter ? `${srcPrefix}app/api/anteater` : `${srcPrefix}pages/api/anteater`;
   const routePath = join(cwd, routeDir, route.filename);
   const createdRoute = await writeIfNotExists(routePath, route.content);
   if (createdRoute) {
@@ -1369,7 +1370,7 @@ export async function scaffoldFiles(cwd, options) {
 
   // Runs API route (multi-run discovery)
   const runsRoute = generateRunsRoute(options);
-  const runsDir = options.isAppRouter ? "app/api/anteater/runs" : "pages/api/anteater/runs";
+  const runsDir = options.isAppRouter ? `${srcPrefix}app/api/anteater/runs` : `${srcPrefix}pages/api/anteater/runs`;
   const runsPath = join(cwd, runsDir, runsRoute.filename);
   const createdRunsRoute = await writeIfNotExists(runsPath, runsRoute.content);
   if (createdRunsRoute) {
