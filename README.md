@@ -6,7 +6,7 @@
 
 <br/>
 
-Anteater adds a prompt bar to your Next.js + Vercel app. Users send changes, Claude codes it, then your app redeploys.
+Adds a prompt bar to your Next.js + Vercel app. Users send changes, Claude codes it, then your app redeploys.
 ## Setup
 
 ```
