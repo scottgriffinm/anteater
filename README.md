@@ -1,8 +1,8 @@
-<h1 align="center">
-  <img src="anteater.svg" alt="Anteater" width="200" />
-</h1>
+<h1 align="center">Anteater — Let users make your app.</h1>
 
-<h2 align="center">Let users make your app</h2>
+<p align="center">
+  <img src="anteater.svg" alt="Anteater" width="200" />
+</p>
 
 <div align="center">
 
