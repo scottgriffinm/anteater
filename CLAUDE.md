@@ -224,6 +224,10 @@ When deploy succeeds, the run is removed from the API response (not shown in UI)
 
 **Don't ask the user where their project is — find it yourself.** If they give you a project name, search the filesystem (`find` or `ls`). Only ask if you genuinely can't locate it after searching.
 
+**When fixing UI issues, change only what's broken — don't add new effects.** If the user says an animation is laggy, fix the performance. Don't add opacity fades, easing changes, or other embellishments they didn't ask for. The user will ask for extras if they want them.
+
+**Downloading audio/assets from the web: never guess URLs.** Sound hosting sites (mixkit, freesound, pixabay) don't serve files at predictable URLs — they use JS-rendered download buttons and anti-hotlinking. The pattern that works: (1) WebFetch the listing page to extract real file paths, (2) curl those exact paths. Known reliable sources for direct curl downloads: `soundjay.com` (paths like `human_c2026/fart-01.mp3`) and `pacdv.com` (paths like `sounds/fart-sounds/fart-5.mp3`). Always verify the downloaded file with `file <path>` to confirm it's real audio, not HTML.
+
 **Always trace both sides of a status interface before making claims.** The scaffold template (scaffold.mjs) generates the server-side route that DETERMINES statuses. The client (anteater-bar.tsx) only DISPLAYS them. To understand what statuses users see, read the server-side decision tree AND the client display logic. Don't read one layer and extrapolate.
 
 ## Agent Guidelines
