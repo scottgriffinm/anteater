@@ -175,13 +175,15 @@ export async function main() {
     validateGitHubToken(githubToken, project.gitRemote)
   );
 
-  if (!check.ok && check.missing.length > 0 && !check.missing.includes("unknown")) {
+  if (check.ok) {
+    ok("Token has required permissions");
+  } else if (check.missing.includes("unknown")) {
+    warn("Could not verify token permissions (GitHub API unreachable). Proceeding anyway.");
+  } else {
     fail("Token is missing required scopes: " + check.missing.join(", "));
     info(`Create a new Fine-grained PAT at ${cyan("https://github.com/settings/tokens?type=beta")}`);
     info(`Set permissions: ${bold("Contents")}, ${bold("Pull requests")}, ${bold("Actions")} \u2192 Read and write`);
     process.exit(1);
-  } else if (check.ok) {
-    ok("Token has required permissions");
   }
   blank();
 
@@ -190,13 +192,14 @@ export async function main() {
 
   const defaultAllowed = [];
   const defaultBlocked = ["lib/auth/**", "lib/billing/**", ".env*"];
+  const prefix = project.hasSrcDir ? "src/" : "";
 
   if (project.isAppRouter) {
-    defaultAllowed.push("app/**", "components/**", "styles/**");
-    defaultBlocked.push("app/api/**");
+    defaultAllowed.push(`${prefix}app/**`, `${prefix}components/**`, `${prefix}styles/**`);
+    defaultBlocked.push(`${prefix}app/api/**`);
   } else {
-    defaultAllowed.push("pages/**", "components/**", "styles/**");
-    defaultBlocked.push("pages/api/**");
+    defaultAllowed.push(`${prefix}pages/**`, `${prefix}components/**`, `${prefix}styles/**`);
+    defaultBlocked.push(`${prefix}pages/api/**`);
   }
 
   console.log(`  ${green("Allowed:")} ${defaultAllowed.join(", ")}`);
@@ -312,6 +315,7 @@ export async function main() {
       productionBranch,
       isTypeScript: project.isTypeScript,
       isAppRouter: project.isAppRouter,
+      hasSrcDir: project.hasSrcDir || false,
       layoutFile: project.layoutFile,
       model,
       permissionsMode,
@@ -447,12 +451,14 @@ export async function main() {
   console.log(`  ${bold(green("\u{1F41C} Anteater is ready."))}`);
   blank();
   heading("Next steps");
-  info(`${bold("1.")} Make sure your Vercel project is connected to your GitHub repo.`);
+  info(`${bold("1.")} Commit the new files Anteater added and push to ${bold(productionBranch)}:`);
+  info(`   ${dim("git add . && git commit -m \"chore: configure Anteater\" && git push")}`);
+  blank();
+  info(`${bold("2.")} Make sure your Vercel project is connected to your GitHub repo.`);
   info(`   Vercel auto-deploys when code is pushed to ${bold(productionBranch)}.`);
   info(`   If not set up: ${cyan("https://vercel.com/new")} \u2192 Import your repo.`);
   blank();
-  info(`${bold("2.")} Deploy your app and look for the "${green("Edit this page")}" button.`);
-  info("   Users can modify your app by typing changes in the Anteater bar.");
+  info(`${bold("3.")} Once deployed, look for the "${green("Edit this page")}" button.`);
   blank();
   warn("Reminder: only expose Anteater to trusted users.");
   info("Users with access to the prompt bar can make arbitrary code changes.");
