@@ -5,14 +5,6 @@
 </p>
 
 <div align="center">
-
-[![npm](https://img.shields.io/npm/v/next-anteater?color=0183ff&style=flat)](https://www.npmjs.com/package/next-anteater)
-[![license](https://img.shields.io/github/license/scottgriffinm/anteater?color=0183ff&style=flat)](https://github.com/scottgriffinm/anteater/blob/master/LICENSE)
-[![stars](https://img.shields.io/github/stars/scottgriffinm/anteater?logo=github&color=0183ff&style=flat)](https://github.com/scottgriffinm/anteater/stargazers)
-
-</div>
-
-<div align="center">
 <a href="https://www.anteater.cool">🌐 Website</a> &middot; <a href="https://www.npmjs.com/package/next-anteater">📦 npm</a> &middot; <a href="https://github.com/scottgriffinm/anteater/issues">🐛 Issues</a>
 </div>
 
