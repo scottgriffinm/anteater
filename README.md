@@ -57,6 +57,7 @@ Anteater gives users the ability to modify your application's code via AI. This 
 - **Arbitrary code changes.** Any user with access to the prompt bar can instruct the AI agent to make any code change, including destructive ones.
 - **Secret and pipeline exposure.** Anteater-generated PRs execute in GitHub Actions with access to your repository secrets and deployment pipeline.
 - **No built-in access control.** Anteater does not provide authentication or authorization. The prompt bar is accessible to anyone who can load the page.
+- **No safety guarantees.** The contributors to this repository bear no responsibility for damages incurred by this open source software. Use at your own risk.
 
 > **TL;DR:** Treat Anteater like giving someone commit access to your repo. Don't expose it to the public internet with real credentials or production data.
 
