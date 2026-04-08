@@ -100,11 +100,12 @@ export async function main() {
   }
   ok("GitHub CLI installed");
 
-  if (!hasCommand("vercel")) {
-    fail("Vercel CLI is required. Install it: npm i -g vercel");
-    process.exit(1);
+  const hasVercel = hasCommand("vercel");
+  if (hasVercel) {
+    ok("Vercel CLI installed");
+  } else {
+    warn("Vercel CLI not found. You'll need to set GITHUB_TOKEN manually in your Vercel dashboard.");
   }
-  ok("Vercel CLI installed");
 
   // ─── Detect project ─────────────────────────────────────────
   const project = await detectProject(cwd);
@@ -339,8 +340,48 @@ export async function main() {
   );
 
   // Vercel: only GITHUB_TOKEN needed (repo auto-detected, deploy detection automatic)
-  await spinner("Setting GITHUB_TOKEN in Vercel", () => {
-    setVercelEnv("GITHUB_TOKEN", githubToken);
+  const vercelEnvSet = await spinner("Setting GITHUB_TOKEN in Vercel", () => {
+    return setVercelEnv("GITHUB_TOKEN", githubToken);
+  });
+  if (vercelEnvSet) {
+    ok("GITHUB_TOKEN set in Vercel");
+  } else {
+    warn("Could not set GITHUB_TOKEN in Vercel (project may not be linked).");
+    info("Add it manually: Vercel dashboard \u2192 your project \u2192 Settings \u2192 Environment Variables \u2192 add GITHUB_TOKEN");
+  }
+
+  // ─── Create shared queue issue ──────────────────────────────
+  await spinner("Creating shared queue issue", async () => {
+    const ghHeaders = {
+      Authorization: `Bearer ${githubToken}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+    // Create label (ignore 422 if it already exists)
+    await fetch(`https://api.github.com/repos/${project.gitRemote}/labels`, {
+      method: "POST",
+      headers: ghHeaders,
+      body: JSON.stringify({ name: "anteater-queue", color: "d4c5f9", description: "Anteater shared prompt queue" }),
+    }).catch(() => {});
+    // Check if queue issue already exists
+    const existingRes = await fetch(
+      `https://api.github.com/repos/${project.gitRemote}/issues?labels=anteater-queue&state=open&per_page=1`,
+      { headers: ghHeaders }
+    );
+    if (existingRes.ok) {
+      const existing = await existingRes.json();
+      if (existing.length > 0) return; // already exists
+    }
+    // Create queue issue
+    await fetch(`https://api.github.com/repos/${project.gitRemote}/issues`, {
+      method: "POST",
+      headers: ghHeaders,
+      body: JSON.stringify({
+        title: "Anteater Queue",
+        body: "Shared prompt queue for Anteater. Do not close \u2014 comments are managed automatically.",
+        labels: ["anteater-queue"],
+      }),
+    });
   });
 
   // ─── Push workflow ──────────────────────────────────────────
@@ -405,8 +446,13 @@ export async function main() {
   blank();
   console.log(`  ${bold(green("\u{1F41C} Anteater is ready."))}`);
   blank();
-  info(`Deploy your app and look for the "${green("Edit this page")}" button.`);
-  info("Users can modify your app by typing changes in the Anteater bar.");
+  heading("Next steps");
+  info(`${bold("1.")} Make sure your Vercel project is connected to your GitHub repo.`);
+  info(`   Vercel auto-deploys when code is pushed to ${bold(productionBranch)}.`);
+  info(`   If not set up: ${cyan("https://vercel.com/new")} \u2192 Import your repo.`);
+  blank();
+  info(`${bold("2.")} Deploy your app and look for the "${green("Edit this page")}" button.`);
+  info("   Users can modify your app by typing changes in the Anteater bar.");
   blank();
   warn("Reminder: only expose Anteater to trusted users.");
   info("Users with access to the prompt bar can make arbitrary code changes.");

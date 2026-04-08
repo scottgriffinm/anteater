@@ -8,13 +8,18 @@
 
 Adds a prompt bar to your Next.js + Vercel app. Users send changes -> Claude codes them -> your app redeploys.
 
+## Prerequisites
+
+- A Next.js app deployed on [Vercel](https://vercel.com), connected to a GitHub repo (Vercel auto-deploys on push)
+- [GitHub CLI](https://cli.github.com) installed
+
 ## Setup
 
 ```
 npx next-anteater setup
 ```
 
-Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is automatic.
+Four steps: Anthropic key, GitHub PAT, editable paths, agent configuration. The CLI handles scaffolding, secrets, env vars, and workflow setup.
 
 ## How It Works
 

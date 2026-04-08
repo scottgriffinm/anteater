@@ -233,6 +233,20 @@ When deploy succeeds, the run is removed from the API response (not shown in UI)
 
 **Always trace both sides of a status interface before making claims.** The scaffold template (scaffold.mjs) generates the server-side route that DETERMINES statuses. The client (anteater-bar.tsx) only DISPLAYS them. To understand what statuses users see, read the server-side decision tree AND the client display logic. Don't read one layer and extrapolate.
 
+**Test new features against live APIs BEFORE publishing/deploying.** When adding features that use external APIs (GitHub Issues, Actions, etc.), test the actual API calls locally first — create a test issue, post a test comment, delete it, verify the response shape. A local `npm run build` passing does NOT mean the feature works. Scaffold.mjs generates code that runs on deployed servers — you can't unit test it, so you must verify the API interactions independently before shipping. Never declare a feature "done" after only a build check.
+
+**When deploying changes to external projects, verify the deploy is live before testing.** Pushing to git triggers a Vercel deploy, but the deploy takes 1-2 minutes. Submitting test prompts before the deploy is live means you're testing the OLD code, not your changes. Wait for the deploy to complete (check Vercel or poll the site) before running end-to-end tests.
+
+**Scaffolded TypeScript must compile in strict mode.** The scaffold.mjs `add()` calls generate TypeScript that runs in user projects with strict checks. Always initialize variables that might not be assigned in all branches (use `let x: T | undefined;` not `let x: T;`). A `tsc` pass in the Anteater repo doesn't catch these — the generated code only gets type-checked when the user's project builds. Before publishing, generate the route file and run `tsc --noEmit` against it.
+
+**When fixing setup/onboarding flows, prefer exposing existing failure signals over adding new preflight checks.** If a function already returns `false` on failure but the caller ignores it, the fix is to check the return value and tell the user — not to add a new validation step before the call. Simpler is always better for CLI flows. Don't add complexity (new helpers, new commands) when the existing code already knows what went wrong.
+
+**Verify CLI commands exist before proposing them.** When suggesting platform CLI commands (Vercel, GitHub, etc.) for checks or automation, don't guess at subcommand names. Test the command yourself or check docs first. For Vercel specifically: `vercel env ls` is the reliable way to check both authentication AND project link status (fails if either is missing). Don't use `vercel inspect` or other commands without verifying they exist and do what you think.
+
+**When fixing setup/onboarding flows, prefer exposing existing failure signals over adding new preflight checks.** If a function already returns `false` on failure but the caller ignores it, the fix is to check the return value and tell the user — not to add a new validation step before the call. Simpler is always better for CLI flows. Don't add complexity (new helpers, new commands) when the existing code already knows what went wrong.
+
+**Publishing npm + deploying is a multi-step chain — verify each step.** The chain is: (1) build passes, (2) publish succeeds, (3) npm propagates (~15s), (4) target project installs new version, (5) re-scaffold routes if scaffold logic changed, (6) TypeScript compiles in target project, (7) push triggers Vercel deploy, (8) deploy succeeds, (9) live site serves new bundle. A failure at ANY step means the feature isn't live. Check each one. Don't skip to end-to-end testing and wonder why nothing changed.
+
 ## Agent Guidelines
 
 - **NEVER fabricate URLs** or present uncertain info as fact. If you don't know a URL, say so.

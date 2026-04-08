@@ -32,6 +32,8 @@ interface QueuedPrompt {
   branch?: string;
   context?: AnteaterRequest["context"];
   queuedAt: number;
+  /** GitHub issue comment ID — set when the server creates the queue comment */
+  queueCommentId?: number;
 }
 
 interface DismissedRun {
@@ -157,8 +159,18 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
       startedAt: new Date(p.submittedAt).toISOString(),
     }));
 
-    // Convert queued prompts to AnteaterRun format
-    const queuedAsRuns: AnteaterRun[] = queuedPromptsRef.current.map((q, i) => ({
+    // Server may return queued runs from the shared GitHub Issue queue.
+    // Deduplicate: if a server run with step "queued" matches a local QueuedPrompt
+    // by requestId, the server version wins (it has submittedBy + real queue position).
+    const serverQueuedIds = new Set(
+      visibleServerRuns.filter((r) => r.step === "queued").map((r) => r.requestId),
+    );
+
+    // Only show local queued prompts that the server doesn't know about yet
+    const localOnlyQueued = queuedPromptsRef.current.filter(
+      (q) => !serverQueuedIds.has(q.id),
+    );
+    const queuedAsRuns: AnteaterRun[] = localOnlyQueued.map((q, i) => ({
       branch: "",
       requestId: q.id,
       prompt: q.prompt,
@@ -168,7 +180,7 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
       queuePosition: i + 1,
     }));
 
-    // Pending first, then server runs, then queued — cap at 5
+    // Pending first, then server runs (including server-known queued), then local-only queued — cap at 5
     return [...pendingAsRuns, ...visibleServerRuns, ...queuedAsRuns].slice(0, 5);
   }, []);
 
@@ -200,6 +212,7 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
           mode: next.mode,
           branch: next.branch,
           context: next.context,
+          queueCommentId: next.queueCommentId,
         }),
       });
       const data: AnteaterResponse = await res.json();
@@ -399,6 +412,7 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
             branch: request.branch,
             context: request.context,
             queuedAt: now,
+            queueCommentId: data.queueCommentId,
           };
           queuedPromptsRef.current = [...queuedPromptsRef.current, queued];
           saveQueuedPrompts(queuedPromptsRef.current);
