@@ -26,12 +26,10 @@ Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is autom
 
 ## Features
 
-- **One command setup:** `npx next-anteater setup` handles scaffolding, secrets, env vars, and workflow configuration
 - **Real-time status:** the prompt bar tracks each run through Starting, Working, Merging, Deploying, and auto-reloads on deploy
 - **Sandboxed or unrestricted:** choose whether the agent can access the internet and external tools, or stays locked to code editing only
 - **Model selection:** pick from Sonnet, Opus, Opus 1M, or Haiku depending on your cost and capability needs
 - **Path scoping:** restrict which files and directories the agent is allowed to modify
-- **Clean uninstall:** `npx next-anteater uninstall` removes everything it added
 
 ## Security Risks
 
