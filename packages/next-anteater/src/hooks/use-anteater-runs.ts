@@ -199,10 +199,6 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
     drainingRef.current = true;
     const next = queuedPromptsRef.current[0];
 
-    // Remove from queue BEFORE posting (prevents multi-tab duplicate dispatch)
-    queuedPromptsRef.current = queuedPromptsRef.current.slice(1);
-    saveQueuedPrompts(queuedPromptsRef.current);
-
     try {
       const res = await fetch(apiEndpoint, {
         method: "POST",
@@ -218,7 +214,9 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
       const data: AnteaterResponse = await res.json();
 
       if (data.status === "queued") {
-        // Accepted — move to pending runs
+        // Accepted — remove from queue and move to pending runs
+        queuedPromptsRef.current = queuedPromptsRef.current.slice(1);
+        saveQueuedPrompts(queuedPromptsRef.current);
         const now = Date.now();
         const pendingRun: PendingRun = {
           branch: data.branch,
@@ -230,15 +228,14 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
         pendingRunsRef.current = [...pendingRunsRef.current, pendingRun];
         savePendingRuns(pendingRunsRef.current);
       } else if (data.status === "busy") {
-        // Race condition — re-add to front of queue
-        queuedPromptsRef.current = [next, ...queuedPromptsRef.current];
+        // Race condition — keep at front of queue (don't remove)
+      } else {
+        // Server error — re-add to front of queue so it can be retried
+        queuedPromptsRef.current = [next, ...queuedPromptsRef.current.slice(1)];
         saveQueuedPrompts(queuedPromptsRef.current);
       }
-      // If error, the prompt is lost — acceptable, the user saw the error
     } catch {
-      // Network error — re-add to queue
-      queuedPromptsRef.current = [next, ...queuedPromptsRef.current];
-      saveQueuedPrompts(queuedPromptsRef.current);
+      // Network error — keep in queue (it was never removed)
     } finally {
       drainingRef.current = false;
     }
@@ -386,6 +383,17 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
         ].slice(0, 5),
       );
 
+      // Add to pendingRunsRef IMMEDIATELY so pollRuns/mergeRuns won't drop it
+      const tempPending: PendingRun = {
+        branch: "",
+        requestId: tempId,
+        prompt: request.prompt,
+        mode: request.mode,
+        submittedAt: now,
+      };
+      pendingRunsRef.current = [...pendingRunsRef.current, tempPending];
+      savePendingRuns(pendingRunsRef.current);
+
       try {
         const res = await fetch(apiEndpoint, {
           method: "POST",
@@ -396,7 +404,9 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
         const data: AnteaterResponse = await res.json();
 
         if (!res.ok || data.status === "error") {
-          // Remove the optimistic run and show error
+          // Remove the optimistic run and temp pending entry, show error
+          pendingRunsRef.current = pendingRunsRef.current.filter((p) => p.requestId !== tempId);
+          savePendingRuns(pendingRunsRef.current);
           setRuns((prev) => prev.filter((r) => r.requestId !== tempId));
           setError(data.error || `Request failed (${res.status})`);
           setSubmitting(false);
@@ -404,7 +414,9 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
         }
 
         if (data.status === "busy") {
-          // Server says another run is active — transition to queued
+          // Server says another run is active — remove temp pending, transition to queued
+          pendingRunsRef.current = pendingRunsRef.current.filter((p) => p.requestId !== tempId);
+          savePendingRuns(pendingRunsRef.current);
           const queued: QueuedPrompt = {
             id: tempId,
             prompt: request.prompt,
@@ -431,15 +443,12 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
           return { requestId: tempId, branch: "", status: "busy" as const } satisfies AnteaterResponse;
         }
 
-        // Server accepted and dispatched — update the optimistic run with real IDs
-        const pendingRun: PendingRun = {
-          branch: data.branch,
-          requestId: data.requestId,
-          prompt: request.prompt,
-          mode: request.mode,
-          submittedAt: now,
-        };
-        pendingRunsRef.current = [...pendingRunsRef.current, pendingRun];
+        // Server accepted and dispatched — replace temp pending entry with real IDs
+        pendingRunsRef.current = pendingRunsRef.current.map((p) =>
+          p.requestId === tempId
+            ? { ...p, branch: data.branch, requestId: data.requestId }
+            : p,
+        );
         savePendingRuns(pendingRunsRef.current);
 
         // Replace temp ID with real requestId/branch from server
@@ -455,7 +464,9 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
         startPolling(POLL_ACTIVE);
         return data;
       } catch (err) {
-        // Remove the optimistic run on network error
+        // Remove the optimistic run and temp pending entry on network error
+        pendingRunsRef.current = pendingRunsRef.current.filter((p) => p.requestId !== tempId);
+        savePendingRuns(pendingRunsRef.current);
         setRuns((prev) => prev.filter((r) => r.requestId !== tempId));
         setError(err instanceof Error ? err.message : "Unknown error");
         setSubmitting(false);

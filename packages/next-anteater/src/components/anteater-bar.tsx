@@ -200,9 +200,14 @@ export function AnteaterBar({
   const [prompt, setPrompt] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
   const [username, setUsername] = useState(loadUsername);
+  const [mounted, setMounted] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { runs, submitting, error, canSubmit, submit, deleteRun } = useAnteaterRuns(apiEndpoint);
-  const needsName = !username;
+  const needsName = mounted && !username;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (isExpanded && inputRef.current) {
