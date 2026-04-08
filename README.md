@@ -64,6 +64,8 @@ Anteater gives users the ability to modify your application's code via AI. This 
 
 ## Development
 
+We're looking for contributors! If you're interested, open an issue or submit a PR.
+
 ```bash
 pnpm install
 pnpm dev
