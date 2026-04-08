@@ -41,7 +41,7 @@ Anteater gives users the ability to modify your application's code via AI. This 
 - **No built-in access control.** Anteater does not provide authentication or authorization. The prompt bar is accessible to anyone who can load the page.
 - **No safety guarantees.** This is open source software with no warranty. Contributors are not responsible for any damages. Use at your own risk.
 
-> **TL;DR:** Treat Anteater like giving users commit access to your repo. Don't expose it to the public internet with real credentials or production data.
+> **TL;DR:** Anteater is like if you gave everyone commit access to your repo.
 
 ## Where This Is Going
 
