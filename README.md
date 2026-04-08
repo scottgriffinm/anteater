@@ -57,6 +57,11 @@ Anteater gives users the ability to modify your application's code via AI. This 
 
 > **TL;DR:** Treat Anteater like giving someone commit access to your repo. Don't expose it to the public internet with real credentials or production data.
 
+## Where This Is Going
+
+- Realtime collaboration
+- Permissions management
+
 ## Development
 
 ```bash
