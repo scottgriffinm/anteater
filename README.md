@@ -29,10 +29,6 @@ Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is autom
 
 ## How It Works
 
-```
-User sends prompt  →  GitHub Action runs AI agent  →  PR auto-merges  →  Vercel redeploys
-```
-
 1. A user types a change into the prompt bar embedded in your app
 2. Anteater creates a branch and triggers a GitHub Actions workflow
 3. A Claude Code agent makes the requested code changes autonomously
