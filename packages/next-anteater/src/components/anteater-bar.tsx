@@ -272,10 +272,6 @@ export function AnteaterBar({
           0%, 100% { opacity: 1; }
           50% { opacity: 0.3; }
         }
-        @keyframes anteater-slide-up {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
       `}</style>
 
       <div
@@ -291,46 +287,48 @@ export function AnteaterBar({
         }}
       >
         <div style={{ position: "relative" }}>
-          {/* Progress panel — only shown when there are runs or errors */}
-          {isExpanded && showPanel && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: `${BUTTON_SIZE / 2}px`,
-                zIndex: 0,
-                background: "#111",
-                border: "1px solid #333",
-                borderRadius: "12px 12px 12px 12px",
-                borderBottom: "none",
-                overflow: "hidden",
-                animation: "anteater-slide-up 0.25s ease-out",
-                paddingBottom: `${BUTTON_SIZE + 4}px`,
-                pointerEvents: "auto",
-              }}
-            >
-              {runs.map((run, i) => (
-                <div key={run.requestId}>
-                  {i > 0 && (
-                    <div style={{ height: "1px", background: "#222", margin: "0 14px" }} />
-                  )}
-                  <RunRow run={run} onDelete={deleteRun} />
-                </div>
-              ))}
-              {error && !hasRuns && (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    fontSize: "13px",
-                    color: "#ef4444",
-                  }}
-                >
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Progress panel — always mounted, slides up/down in sync with input bar */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: `${BUTTON_SIZE / 2}px`,
+              zIndex: 0,
+              background: "#111",
+              border: isExpanded && showPanel ? "1px solid #333" : "1px solid transparent",
+              borderRadius: "12px 12px 12px 12px",
+              borderBottom: "none",
+              overflow: "hidden",
+              maxHeight: isExpanded && showPanel ? "400px" : "0px",
+              opacity: isExpanded && showPanel ? 1 : 0,
+              transition: isExpanded && showPanel
+                ? "max-height 0.25s ease-out 0.25s, opacity 0.25s ease-out 0.25s, border-color 0.25s ease-out 0.25s, padding-bottom 0.25s ease-out 0.25s"
+                : "max-height 0.25s ease-out, opacity 0.25s ease-out, border-color 0.25s ease-out, padding-bottom 0.25s ease-out",
+              paddingBottom: isExpanded && showPanel ? `${BUTTON_SIZE + 4}px` : "0px",
+              pointerEvents: isExpanded && showPanel ? "auto" : "none",
+            }}
+          >
+            {runs.map((run, i) => (
+              <div key={run.requestId}>
+                {i > 0 && (
+                  <div style={{ height: "1px", background: "#222", margin: "0 14px" }} />
+                )}
+                <RunRow run={run} onDelete={deleteRun} />
+              </div>
+            ))}
+            {error && !hasRuns && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  fontSize: "13px",
+                  color: "#ef4444",
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
 
           {/* Input bar + circle button */}
           <div style={{ position: "relative", zIndex: 1 }}>
@@ -347,7 +345,9 @@ export function AnteaterBar({
               style={{
                 borderRadius: showPanel ? "0 0 12px 12px" : "12px",
                 transform: isExpanded ? "translateX(0)" : "translateX(100%)",
-                transition: "transform 0.25s ease-out",
+                transition: !isExpanded && showPanel
+                  ? "transform 0.25s ease-out 0.25s"
+                  : "transform 0.25s ease-out",
               }}
             >
               <div
