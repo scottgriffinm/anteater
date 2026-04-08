@@ -45,7 +45,7 @@ Anteater gives users the ability to modify your application's code via AI. This 
 
 ## Where This Is Going
 
-- DOM selection
+- UI element selection
 - Permissions management
 
 ## Development
