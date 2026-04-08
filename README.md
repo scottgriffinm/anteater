@@ -6,7 +6,7 @@
 
 <br/>
 
-Adds a prompt bar to your Next.js + Vercel app. Users send changes -> Claude codes them -> your app redeploys.
+Adds a prompt bar to your Next.js + Vercel app to let users vibecode in prod.
 
 ## Prerequisites
 
