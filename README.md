@@ -2,7 +2,7 @@
   <img src="anteater.svg" alt="Anteater" width="200" />
 </h1>
 
-<h2 align="center">Let users make your app.</h2>
+<h2 align="center">Anteater</h2>
 
 <div align="center">
 
