@@ -415,10 +415,12 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
 
         if (data.status === "busy") {
           // Server says another run is active — remove temp pending, transition to queued
+          // Use the server's requestId (not client tempId) so dedup matches the queue comment
+          const serverId = data.requestId || tempId;
           pendingRunsRef.current = pendingRunsRef.current.filter((p) => p.requestId !== tempId);
           savePendingRuns(pendingRunsRef.current);
           const queued: QueuedPrompt = {
-            id: tempId,
+            id: serverId,
             prompt: request.prompt,
             mode: request.mode,
             branch: request.branch,
@@ -433,14 +435,14 @@ export function useAnteaterRuns(apiEndpoint: string = "/api/anteater") {
           setRuns((prev) =>
             prev.map((r) =>
               r.requestId === tempId
-                ? { ...r, step: "queued" as const, queuePosition }
+                ? { ...r, requestId: serverId, step: "queued" as const, queuePosition }
                 : r,
             ),
           );
 
           setSubmitting(false);
           startPolling(POLL_ACTIVE);
-          return { requestId: tempId, branch: "", status: "busy" as const } satisfies AnteaterResponse;
+          return { requestId: serverId, branch: "", status: "busy" as const } satisfies AnteaterResponse;
         }
 
         // Server accepted and dispatched — replace temp pending entry with real IDs
