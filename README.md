@@ -17,13 +17,11 @@ Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is autom
 
 ## How It Works
 
-1. A user types a change into the prompt bar embedded in your app
+1. A user sends a change into the prompt bar embedded in your app
 2. Anteater creates a branch and triggers a GitHub Actions workflow
-3. A Claude Code agent makes the requested code changes autonomously
+3. The worflow starts a Claude Code session which makes the requested changes
 4. The workflow opens a PR with auto-merge enabled
-5. Once merged, Vercel redeploys your app with the changes live
-
-The agent runs as a full multi-turn [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session. It can read files, edit code, run builds, and iterate on errors autonomously.
+5. Once merged, Vercel redeploys your app with the changes
 
 ## Features
 
