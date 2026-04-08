@@ -23,11 +23,7 @@ Four steps: Anthropic key, GitHub PAT, editable paths, agent configuration. The 
 
 ## How It Works
 
-1. A user sends a change into the prompt bar embedded in your app
-2. Anteater creates a branch and triggers a GitHub Actions workflow
-3. The worflow starts a Claude Code session which makes the requested changes
-4. The workflow opens a PR with auto-merge enabled
-5. Once merged, Vercel redeploys your app with the changes
+User prompt -> GitHub Actions -> Claude Code -> PR -> auto-merge -> Vercel redeploy
 
 ## Features
 
