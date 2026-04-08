@@ -107,7 +107,7 @@ export function setGitHubSecret(repo, name, value) {
   if (!hasCommand("gh")) {
     throw new Error("GitHub CLI (gh) is not installed. Install it: https://cli.github.com");
   }
-  execSync(`gh secret set ${name} --repo ${repo} --body -`, {
+  execSync(`gh secret set ${name} --repo ${repo}`, {
     input: value,
     stdio: ["pipe", "ignore", "pipe"],
   });
