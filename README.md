@@ -34,14 +34,12 @@ Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is autom
 
 ## Security Risks
 
-Anteater gives users the ability to modify your application's code via AI. This is equivalent to giving someone commit access to your repository.
+Anteater gives users the ability to modify your application's code via AI. This is equivalent to giving everyone commit access to your repository.
 
 - **Arbitrary code changes.** Any user with access to the prompt bar can instruct the AI agent to make any code change, including destructive ones.
 - **Secret and pipeline exposure.** Anteater-generated PRs execute in GitHub Actions with access to your repository secrets and deployment pipeline.
 - **No built-in access control.** Anteater does not provide authentication or authorization. The prompt bar is accessible to anyone who can load the page.
 - **No safety guarantees.** This is open source software with no warranty. Contributors are not responsible for any damages. Use at your own risk.
-
-> **TL;DR:** Anteater is like if you gave everyone commit access to your repo.
 
 ## Where This Is Going
 
