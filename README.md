@@ -18,7 +18,7 @@
 
 <br/>
 
-Anteater adds a prompt bar to your Next.js + Vercel app. Users describe a change, Claude codes it, and the app redeploys automatically.
+Anteater adds a prompt bar to your Next.js + Vercel app. Users send a change, Claude codes it, then your app redeploys automatically.
 
 ## Setup
 
@@ -31,7 +31,7 @@ Three steps: Anthropic key, GitHub PAT, editable paths. Everything else is autom
 ## How It Works
 
 ```
-User types change  →  GitHub Action runs AI agent  →  PR auto-merges  →  Vercel redeploys
+User sends prompt  →  GitHub Action runs AI agent  →  PR auto-merges  →  Vercel redeploys
 ```
 
 1. A user types a change into the prompt bar embedded in your app
