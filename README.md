@@ -1,4 +1,4 @@
-<h1 align="center">Anteater — Let users vibecode in prod</h1>
+<h1 align="center">Anteater — Let users make your app</h1>
 
 <p align="center">
   <img src="anteater.svg" alt="Anteater" width="200" />
