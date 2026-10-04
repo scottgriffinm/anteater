@@ -201,13 +201,27 @@ export function AnteaterBar({
   const [isExpanded, setIsExpanded] = useState(false);
   const [username, setUsername] = useState(loadUsername);
   const [mounted, setMounted] = useState(false);
+  const [panelVisible, setPanelVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { runs, submitting, error, canSubmit, submit, deleteRun } = useAnteaterRuns(apiEndpoint);
   const needsName = mounted && !username;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Keep panelVisible true with a delay so close animation can play
+  const wantPanel = isExpanded && (runs.length > 0 || !!error);
+  useEffect(() => {
+    if (wantPanel) {
+      if (panelTimerRef.current) clearTimeout(panelTimerRef.current);
+      setPanelVisible(true);
+    } else if (panelVisible) {
+      panelTimerRef.current = setTimeout(() => setPanelVisible(false), 350);
+    }
+    return () => { if (panelTimerRef.current) clearTimeout(panelTimerRef.current); };
+  }, [wantPanel]);
 
   useEffect(() => {
     if (isExpanded && inputRef.current) {
@@ -287,7 +301,7 @@ export function AnteaterBar({
         }}
       >
         <div style={{ position: "relative" }}>
-          {/* Progress panel — always mounted, slides up/down in sync with input bar */}
+          {/* Progress panel — always mounted, transitions in/out */}
           <div
             style={{
               position: "absolute",
@@ -296,17 +310,17 @@ export function AnteaterBar({
               right: `${BUTTON_SIZE / 2}px`,
               zIndex: 0,
               background: "#111",
-              border: isExpanded && showPanel ? "1px solid #333" : "1px solid transparent",
+              border: wantPanel ? "1px solid #333" : "1px solid transparent",
               borderRadius: "12px 12px 12px 12px",
               borderBottom: "none",
               overflow: "hidden",
-              maxHeight: isExpanded && showPanel ? "400px" : "0px",
-              opacity: isExpanded && showPanel ? 1 : 0,
-              transition: isExpanded && showPanel
+              maxHeight: wantPanel ? "400px" : "0px",
+              opacity: wantPanel ? 1 : 0,
+              transition: wantPanel
                 ? "max-height 0.15s ease-out 0.15s, opacity 0.15s ease-out 0.15s, border-color 0.15s ease-out 0.15s, padding-bottom 0.15s ease-out 0.15s"
                 : "max-height 0.15s ease-out, opacity 0.15s ease-out, border-color 0.15s ease-out, padding-bottom 0.15s ease-out",
-              paddingBottom: isExpanded && showPanel ? `${BUTTON_SIZE + 4}px` : "0px",
-              pointerEvents: isExpanded && showPanel ? "auto" : "none",
+              paddingBottom: wantPanel ? `${BUTTON_SIZE + 4}px` : "0px",
+              pointerEvents: wantPanel ? "auto" : "none",
             }}
           >
             {runs.map((run, i) => (
@@ -343,9 +357,9 @@ export function AnteaterBar({
             <form
               onSubmit={handleSubmit}
               style={{
-                borderRadius: showPanel ? "0 0 12px 12px" : "12px",
+                borderRadius: panelVisible ? "0 0 12px 12px" : "12px",
                 transform: isExpanded ? "translateX(0)" : "translateX(100%)",
-                transition: !isExpanded && showPanel
+                transition: !isExpanded && panelVisible
                   ? "transform 0.15s ease-out 0.15s"
                   : "transform 0.15s ease-out",
               }}
@@ -356,7 +370,7 @@ export function AnteaterBar({
                   alignItems: "center",
                   background: "#111",
                   border: "1px solid #333",
-                  borderRadius: showPanel ? "0 0 12px 12px" : "12px",
+                  borderRadius: panelVisible ? "0 0 12px 12px" : "12px",
                   padding: "8px 16px",
                   height: `${BUTTON_SIZE}px`,
                   boxSizing: "border-box",
